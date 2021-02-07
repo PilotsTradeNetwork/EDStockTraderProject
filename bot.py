@@ -1,6 +1,6 @@
 # bot.py
 # Written by Matthew Circelli
-# Ver: 1.1 - Deployed & Bugfixed
+# Ver: 1.2 - GitHub Repo'ed!
 # Date: 2/2/2021
 # Desc: Bot that will hopefully track FC stock levels on pings
 # TODO: Show only demand when on a loading mission, vice-versa
