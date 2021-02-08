@@ -1,6 +1,6 @@
 # bot.py
 # Written by Matthew Circelli
-# Ver: 1.3 - Switched to readfile instead of getenv
+# Ver: 1.4 - Cleaner embeds!
 # Date: 2/7/2021
 # Desc: Bot that will hopefully track FC stock levels on pings
 # TODO: Show only demand when on a loading mission, vice-versa
@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from discord.ext import commands
 
 load_dotenv()
-TOKEN = os.getenv('TEST_TOKEN')
+TOKEN = os.getenv('DISCORD_TOKEN')
 GUILD = os.getenv('DISCORD_GUILD')
 intents = discord.Intents.default()
 intents.members = True
@@ -195,6 +195,11 @@ async def stock(ctx, fcname):
         stock_data[i] = com_data[i]['stock']
         dem_data[i] = com_data[i]['demand']
 
+    name_data = '\n'.join(name_data)
+    string_stocks = [str(i) for i in stock_data]
+    string_dems = [str(i) for i in dem_data]
+    stock_data = '\n'.join(string_stocks)
+    dem_data = '\n'.join(string_dems)
     print('Creating embed...')
     embed = discord.Embed(title=f"{fcname} ({stn_data['sName']}) stock")
     embed.add_field(name = 'Commodity', value = name_data, inline = True)
@@ -221,6 +226,7 @@ async def fclist(ctx):
     namelist = names.split('.')
     namelist.remove('')
     print('Listing active carriers')
+    namelist = '\n'.join(namelist)  # Joining the list with newline as the delimeter
     embed = discord.Embed(title='Tracked carriers')
     embed.add_field(name = 'Carrier Names', value = namelist)
     print('Sent!')
