@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from discord.ext import commands
 
 load_dotenv()
-TOKEN = os.getenv('DISCORD_TOKEN')
+TOKEN = os.getenv('TEST_TOKEN')
 GUILD = os.getenv('DISCORD_GUILD')
 intents = discord.Intents.default()
 intents.members = True
@@ -106,7 +106,7 @@ async def addFC(ctx, FCCode, FCSys, FCName):
     aliasput = envlist[4] + '.' + FCName.lower() + '\n'
     envlist[4] = aliasput
 
-    midput = envlist[5] + '.' + midstr
+    midput = envlist[5] + '.' + midstr + '\n'
     envlist[5] = midput
 
     print(envlist)
@@ -170,6 +170,7 @@ async def stock(ctx, fcname):
         await ctx.send('The requested carrier is not in the list! Add carriers using the add_FC command!')
 
     namelist = names.split('.')
+    envlist[5] = envlist[5].strip('\n')
     midlist = envlist[5].split('.')
     ind = namelist.index(fcname)
     mid = midlist[ind]
