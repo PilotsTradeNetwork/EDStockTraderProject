@@ -1,7 +1,7 @@
 # bot.py
 # Written by Matthew Circelli
-# Ver: 1.2 - GitHub Repo'ed!
-# Date: 2/2/2021
+# Ver: 1.3 - Switched to readfile instead of getenv
+# Date: 2/7/2021
 # Desc: Bot that will hopefully track FC stock levels on pings
 # TODO: Show only demand when on a loading mission, vice-versa
 # TODO: deleteFC command or edit FC command
@@ -71,7 +71,6 @@ async def addFC(ctx, FCCode, FCSys, FCName):
     # Stops if FC is already in list, or if incorrect name format
     matched = re.match("[a-zA-Z0-9][a-zA-Z0-9][a-zA-Z0-9]-[a-zA-Z0-9][a-zA-Z0-9][a-zA-Z0-9]", FCCode)
     isnt_match = not bool(matched)  # If it is NOT a match, we enter the Invalid FC Code condition
-
 
     if FCCode in envlist[3]:
         await ctx.send(f'{FCCode} is a code that is already in the Carrier list!')
@@ -158,9 +157,12 @@ async def APITest(ctx, mark):
 
 @bot.command(name='stock', help='Returns stock and location of a PTN carrier (carrier needs to be added first)')
 async def stock(ctx, fcname):
-    names = os.getenv('FCNAME')
-    mids = os.getenv('MARKETID')
-    names = names.lower()
+    fcfile = open(".env")
+    envlist = fcfile.readlines()
+    fcfile.close()
+
+    names = envlist[4].lower()
+    names = names.strip('\n')
     fcname = fcname.lower()
 
     # this if statement is problematic... might be worth revisiting later
@@ -168,7 +170,7 @@ async def stock(ctx, fcname):
         await ctx.send('The requested carrier is not in the list! Add carriers using the add_FC command!')
 
     namelist = names.split('.')
-    midlist = mids.split('.')
+    midlist = envlist[5].split('.')
     ind = namelist.index(fcname)
     mid = midlist[ind]
 
@@ -206,22 +208,23 @@ async def stock(ctx, fcname):
     await ctx.send(embed=embed)
     print('Embed sent!')
 
+
 @bot.command(name='list', help='Lists all tracked carriers')
 async def fclist(ctx):
-    names = os.getenv('FCNAME')
+    fcfile = open(".env")
+    envlist = fcfile.readlines()
+    fcfile.close()
+
+    names = envlist[4].lower()
+    names = names.strip('\n')
     namelist = names.split('.')
-    tracklist = []
-    for match in namelist:
-        if '.' not in match:
-            tracklist.append(match)
-    tracklist.remove('')
+    namelist.remove('')
     print('Listing active carriers')
     embed = discord.Embed(title='Tracked carriers')
-    embed.add_field(name = 'Carrier Names', value = tracklist)
+    embed.add_field(name = 'Carrier Names', value = namelist)
     print('Sent!')
 
     await ctx.send(embed=embed)
-
 
 
 @bot.event
@@ -231,6 +234,7 @@ async def on_error(event, *args, **kwargs):
             f.write(f'Unhandled message: {args[0]}\n')
         else:
             raise
+
 
 @bot.event
 async def on_command_error(ctx, error):
