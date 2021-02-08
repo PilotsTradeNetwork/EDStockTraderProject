@@ -1,6 +1,6 @@
 # bot.py
 # Written by Matthew Circelli
-# Ver: 1.3 - Switched to readfile instead of getenv
+# Ver: 1.4 - Switched to readfile instead of getenv
 # Date: 2/7/2021
 # Desc: Bot that will hopefully track FC stock levels on pings
 # TODO: Show only demand when on a loading mission, vice-versa
