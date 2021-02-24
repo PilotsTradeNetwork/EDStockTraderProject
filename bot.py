@@ -106,6 +106,7 @@ async def addFC(ctx, FCCode, FCSys, FCName):
     aliasput = envlist[4] + '.' + FCName.lower() + '\n'
     envlist[4] = aliasput
 
+    envlist[5] = envlist[5].strip('\n')
     midput = envlist[5] + '.' + midstr + '\n'
     envlist[5] = midput
 
