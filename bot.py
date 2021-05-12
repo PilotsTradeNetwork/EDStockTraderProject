@@ -184,7 +184,7 @@ async def stock(ctx, fcname):
     com_data = stn_data['commodities']
     loc_data = stn_data['name']
     if com_data == []:
-        await ctx.send(f"{fcname} has an empty market.")
+        await ctx.send(f"{fcname} has no current market data.")
         return
 
     name_data = ["" for x in range(len(com_data))]
