@@ -45,8 +45,9 @@ Example: ;stock alias
 
 ## Thanks
 
-A sincere thankyou to the tools which make EDStockTracker's development possible, including:
+A sincere thankyou to the tools and people which make EDStockTracker's development possible, including:
 
+- the Pilot's Trade Network
 - www.edsm.net
 - www.elitebgs.app
 - www.eddb.io
