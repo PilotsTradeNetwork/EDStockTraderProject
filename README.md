@@ -1,6 +1,9 @@
 # EDStockTracker Discord Bot
 (yes, the repository is misspelt)
 
+![image](https://user-images.githubusercontent.com/6062471/122630789-6d27e380-d094-11eb-9554-d185af5b69d2.png)
+
+
 ## Current Release Version: 1.4
 Note: The 2.0 rework is significantly delayed (>4 months now) due to unexpected extended wait time for a cAPI key from FDev. Sorry for the delay, we are trying our best to rectify the situation!
 
