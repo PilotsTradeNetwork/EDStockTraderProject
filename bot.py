@@ -226,6 +226,8 @@ async def fclist(ctx):
     names = names.strip('\n')
     namelist = names.split('.')
     namelist.remove('')
+    if not namelist:
+        namelist = ['No Fleet Carriers are being tracked, add one!']
     print('Listing active carriers')
     namelist = '\n'.join(namelist)  # Joining the list with newline as the delimeter
     embed = discord.Embed(title='Tracked carriers')
@@ -249,5 +251,20 @@ async def on_command_error(ctx, error):
     if isinstance(error, commands.errors.CheckFailure):
         await ctx.send('You do not have the correct role for this command.')
 
-bot.run(TOKEN)
 
+def verify_config():
+    # if this is the first run with a fresh .env, format it the way we expect.
+    fcfile = open(".env")
+    envlist = fcfile.readlines()
+    fcfile.close()
+    if len(envlist) < 6:
+        print(f'.env Fleet Carrier list is empty, making space.')
+        envlist += ['\n'] * (6 - len(envlist))
+        fcfile = open(".env", "w")
+        fcwrite = "".join(envlist)
+        fcfile.write(fcwrite)
+        fcfile.close()
+
+
+verify_config()
+bot.run(TOKEN)
