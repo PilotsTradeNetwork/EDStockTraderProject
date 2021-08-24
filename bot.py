@@ -63,7 +63,7 @@ async def dingle(ctx):
                                  'FCName: The alias with which you want to refer to the carrier. Please use something '
                                  'simple like "orion" or "9oclock", as this is what you use to call the stock command!'
                                  '\n!!SYSTEMS WITH SPACES IN THE NAMES NEED TO BE "QUOTED LIKE THIS"!! ')
-@commands.has_any_role('Carrier Owner','Bot Handler')
+@commands.has_any_role('Bot Handler', 'Admin', 'Mod')
 async def addFC(ctx, FCCode, FCSys, FCName):
     # Checking if FC is already in the list, and if FC name is in correct format
     # Stops if FC is already in list, or if incorrect name format
@@ -195,7 +195,7 @@ async def stock(ctx, fcname):
 
 @bot.command(name='del_FC', help='Delete a fleet carrier from the tracking database.\n'
                                  'FCCode: Carrier ID Code')
-@commands.has_any_role('Bot Handler')
+@commands.has_any_role('Bot Handler', 'Admin', 'Mod')
 async def delFC(ctx, FCCode):
     FCCode = FCCode.upper()
     matched = re.match("[a-zA-Z0-9][a-zA-Z0-9][a-zA-Z0-9]-[a-zA-Z0-9][a-zA-Z0-9][a-zA-Z0-9]", FCCode)
@@ -214,7 +214,7 @@ async def delFC(ctx, FCCode):
 @bot.command(name='rename_FC', help='Rename a Fleet Carrier alias. \n'
                                     'FCCode: Carrier ID Code \n'
                                     'FCName: new name for the Carrier ')
-@commands.has_any_role('Bot Handler')
+@commands.has_any_role('Bot Handler', 'Admin', 'Mod')
 async def renameFC(ctx, FCCode, FCName):
     FCCode = FCCode.upper()
     FCName = FCName.lower()
