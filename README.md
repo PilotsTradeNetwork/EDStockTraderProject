@@ -22,6 +22,16 @@ Fleet Carrier owners would allow the bot to do this in a similar manner that the
 
 Once the rework is released, we hope to finally do away with inaccurate FC location data, inaccurate market data, etc. Until then, we excitedly wait!
 
+## First time setup
+Create a `.env` file with the following values:
+
+```
+DISCORD_TOKEN=YOUR_TOKEN_HERE
+DISCORD_GUILD=SERVER_NAME_HERE
+```
+
+The tracked fleet carriers will be written to this file, so ensure it has write permissions for the bot user.
+
 ## Features, Commands, How-Tos
 The EDStockTracker uses ';' as a prefix for commands. Example: ;ping
 
