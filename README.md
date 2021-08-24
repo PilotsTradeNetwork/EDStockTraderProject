@@ -32,6 +32,22 @@ DISCORD_GUILD=SERVER_NAME_HERE
 
 The tracked fleet carriers will be written to this file, so ensure it has write permissions for the bot user.
 
+# Required Permissions and Intents
+
+The bot requires the following server permissions to function: (Permission Integer: 103079308352)
+- Send Messages
+- Public Threads
+- Private Threads
+- Manage Messages
+- Embed Links
+- Read Message History
+- Add Reactions
+- View Channels
+
+As well, it requires the following intents:
+- Presence Intent
+- Server Members Intent
+
 ## Features, Commands, How-Tos
 The EDStockTracker uses ';' as a prefix for commands. Example: ;ping
 
