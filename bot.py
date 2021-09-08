@@ -18,7 +18,9 @@ import asyncio
 from dotenv import find_dotenv, load_dotenv, set_key
 from discord.ext import commands
 
+carrierdb = '.carriers'
 load_dotenv()
+load_dotenv(carrierdb)
 TOKEN = os.getenv('DISCORD_TOKEN')
 GUILD = os.getenv('DISCORD_GUILD')
 CARRIERS = os.getenv('FLEET_CARRIERS')
@@ -242,6 +244,7 @@ async def fclist(ctx):
         names = ['No Fleet Carriers are being tracked, add one!']
     print('Listing active carriers')
 
+
     carriers = sorted(names)  # Joining the list with newline as the delimeter
 
 
@@ -325,6 +328,7 @@ async def fclist(ctx):
             break
 
 
+
 @bot.event
 async def on_error(event, *args, **kwargs):
     with open('err.log','a') as f:
@@ -381,9 +385,9 @@ def load_carrier_data(CARRIERS):
 
 def save_carrier_data(FCDATA):
     print(f'Saving Carrier Data.')
-    dotenv_file = find_dotenv()
+    #dotenv_file = find_dotenv()
     CARRIERS = json.dumps(FCDATA)
-    set_key(dotenv_file, "FLEET_CARRIERS", CARRIERS)
+    set_key(carrierdb, "FLEET_CARRIERS", CARRIERS)
 
 
 FCDATA = load_carrier_data(CARRIERS)
