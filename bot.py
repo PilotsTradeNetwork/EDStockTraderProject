@@ -241,7 +241,7 @@ async def fclist(ctx):
         names = ['No Fleet Carriers are being tracked, add one!']
     print('Listing active carriers')
 
-    names = '\n'.join(names)  # Joining the list with newline as the delimeter
+    names = '\n'.join(sorted(names))  # Joining the list with newline as the delimeter
     embed = discord.Embed(title='Tracked carriers')
     embed.add_field(name = 'Carrier Names', value = names)
     print('Sent!')
