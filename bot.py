@@ -14,6 +14,7 @@ import discord
 import re
 import requests
 import json
+import asyncio
 from dotenv import find_dotenv, load_dotenv, set_key
 from discord.ext import commands
 
@@ -243,12 +244,89 @@ async def fclist(ctx):
         names = ['No Fleet Carriers are being tracked, add one!']
     print('Listing active carriers')
 
-    names = '\n'.join(sorted(names))  # Joining the list with newline as the delimeter
-    embed = discord.Embed(title='Tracked carriers')
-    embed.add_field(name = 'Carrier Names', value = names)
-    print('Sent!')
 
-    await ctx.send(embed=embed)
+    carriers = sorted(names)  # Joining the list with newline as the delimeter
+
+
+    def chunk(chunk_list, max_size=10):
+        """
+        Take an input list, and an expected max_size.
+
+        :returns: A chunked list that is yielded back to the caller
+        :rtype: iterator
+        """
+        for i in range(0, len(chunk_list), max_size):
+            yield chunk_list[i:i + max_size]
+
+    def validate_response(react, user):
+        return user == ctx.author and str(react.emoji) in ["◀️", "▶️"]
+        # This makes sure nobody except the command sender can interact with the "menu"
+
+    pages = [page for page in chunk(carriers)]
+
+    max_pages = len(pages)
+    current_page = 1
+
+    embed = discord.Embed(title=f"{len(carriers)} Tracked Fleet Carriers, Page: #{current_page} of {max_pages}")
+    embed.add_field(name = 'Carrier Names', value = '\n'.join(pages[0]))
+
+    # Now go send it and wait on a reaction
+    message = await ctx.send(embed=embed)
+
+    # From page 0 we can only go forwards
+    await message.add_reaction("▶️")
+
+    # 60 seconds time out gets raised by Asyncio
+    while True:
+        try:
+            reaction, user = await bot.wait_for('reaction_add', timeout=60, check=validate_response)
+            if str(reaction.emoji) == "▶️" and current_page != max_pages:
+
+                print(f'{ctx.author} requested to go forward a page.')
+                current_page += 1   # Forward a page
+                new_embed = discord.Embed(title=f"{len(carriers)} Tracked Fleet Carriers, Page: #{current_page} of {max_pages}")
+                new_embed.add_field(name='Carrier Names', value='\n'.join(pages[current_page-1]))
+                await message.edit(embed=new_embed)
+
+                await message.add_reaction("◀️")
+                if current_page == 2:
+                    await message.clear_reaction("▶️")
+                    await message.add_reaction("▶️")
+                elif current_page == max_pages:
+                    await message.clear_reaction("▶️")
+                else:
+                    await message.remove_reaction(reaction, user)
+
+            elif str(reaction.emoji) == "◀️" and current_page > 1:
+                print(f'{ctx.author} requested to go back a page.')
+                current_page -= 1   # Go back a page
+
+                new_embed = discord.Embed(title=f"{len(carriers)} Tracked Fleet Carriers, Page: #{current_page} of {max_pages}")
+                new_embed.add_field(name='Carrier Names', value='\n'.join(pages[current_page-1]))
+
+
+                await message.edit(embed=new_embed)
+                # Ok now we can go forwards, check if we can also go backwards still
+                if current_page == 1:
+                    await message.clear_reaction("◀️")
+
+                await message.remove_reaction(reaction, user)
+                await message.add_reaction("▶️")
+            else:
+                # It should be impossible to hit this part, but lets gate it just in case.
+                print(f'HAL9000 error: {ctx.author} ended in a random state while trying to handle: {reaction.emoji} '
+                      f'and on page: {current_page}.')
+                # HAl-9000 error response.
+                error_embed = discord.Embed(title=f"I'm sorry {ctx.author}, I'm afraid I can't do that.")
+                await message.edit(embed=error_embed)
+                await message.remove_reaction(reaction, user)
+
+        except asyncio.TimeoutError:
+            print(f'Timeout hit during carrier request by: {ctx.author}')
+            await ctx.send(f'Closed the active carrier list request from: {ctx.author} due to no input in 60 seconds.')
+            await message.delete()
+            break
+
 
 
 @bot.event
