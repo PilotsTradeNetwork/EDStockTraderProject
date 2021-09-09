@@ -16,6 +16,8 @@ import requests
 import json
 import asyncio
 from texttable import Texttable
+import requests
+from bs4 import BeautifulSoup
 from dotenv import find_dotenv, load_dotenv, set_key
 from discord.ext import commands
 
@@ -63,7 +65,7 @@ async def dingle(ctx):
 
 @bot.command(name='add_FC', help='Add a fleet carrier for stock tracking.\n'
                                  'FCCode: Carrier ID Code \n'
-                                 'FCSys: Carrier current system \n'
+                                 'FCSys: Carrier current system, use "auto" for inara search \n'
                                  'FCName: The alias with which you want to refer to the carrier. Please use something '
                                  'simple like "orion" or "9oclock", as this is what you use to call the stock command!'
                                  '\n!!SYSTEMS WITH SPACES IN THE NAMES NEED TO BE "QUOTED LIKE THIS"!! ')
@@ -87,6 +89,12 @@ async def addFC(ctx, FCCode, FCSys, FCName):
             return
 
     print(f'Format is good... Checking database...')
+
+    if FCSys == 'auto':
+        FCSys = inara_find_fc_system(FCCode)
+    if FCSys is False:
+        await ctx.send(f'Could not find the FC in inara, please manually supply system name')
+        return
 
     pmeters = {'systemName': FCSys, 'stationName': FCCode}
     r = requests.get('https://www.edsm.net/api-system-v1/stations/market', params=pmeters)
@@ -383,6 +391,26 @@ def save_carrier_data(FCDATA):
     #dotenv_file = find_dotenv()
     CARRIERS = json.dumps(FCDATA)
     set_key(carrierdb, "FLEET_CARRIERS", CARRIERS)
+
+
+def inara_find_fc_system(fcid):
+    print(f"Searching inara for carrier %s" % ( fcid ))
+    URL = "https://inara.cz/station/?search=%s" % ( fcid )
+    try:
+        page = requests.get(URL)
+        soup = BeautifulSoup(page.content, "html.parser")
+        results = soup.find_all("div", class_="mainblock")
+        carrier = results[1].find("span", class_="normal")
+        system = results[1].find("span", class_="uppercase")
+        if fcid == carrier.text[-11:-4]:
+            print("Carrier: %s is at system: %s" % (carrier.text[:-3], system.text))
+            return system.text
+        else:
+            print("Could not find exact match, aborting inara search")
+            return False
+    except:
+        print("No results from inara, aborting search.")
+        return False
 
 
 FCDATA = load_carrier_data(CARRIERS)
