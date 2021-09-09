@@ -15,6 +15,7 @@ import re
 import requests
 import json
 import asyncio
+from texttable import Texttable
 import requests
 from bs4 import BeautifulSoup
 from dotenv import find_dotenv, load_dotenv, set_key
@@ -164,7 +165,7 @@ async def stock(ctx, fcname):
         await ctx.send('The requested carrier is not in the list! Add carriers using the add_FC command!')
         return
 
-    await ctx.send(f'Fetching stock levels for {fcname} ({fccode})')
+    await ctx.send(f'Fetching stock levels for **{fcname} ({fccode})**')
     pmeters = {'marketId': fcdata['FCMid']}
     r = requests.get('https://www.edsm.net/api-system-v1/stations/market',params=pmeters)
     stn_data = r.json()
@@ -175,31 +176,25 @@ async def stock(ctx, fcname):
         await ctx.send(f"{fcname} has no current market data.")
         return
 
-    name_data = ["" for x in range(len(com_data))]
-    stock_data = ["" for x in range(len(com_data))]
-    dem_data = ["" for x in range(len(com_data))]
+    table = Texttable()
+    table.set_cols_align(["l", "r", "r"])
+    table.set_cols_valign(["m", "m", "m"])
+    table.set_cols_dtype(['t', 'i', 'i'])
+    #table.set_deco(Texttable.HEADER | Texttable.HLINES)
+    table.set_deco(Texttable.HEADER)
+    table.header(["Commodity", "Amount", "Demand"])
 
-    for i in range(len(com_data)):
-        name_data[i] = com_data[i]['name']
-        stock_data[i] = com_data[i]['stock']
-        dem_data[i] = com_data[i]['demand']
+    for com in com_data:
+        if com['stock'] != 0 or com['demand'] != 0:
+            table.add_row([com['name'], com['stock'], com['demand']])
 
-    name_data = '\n'.join(name_data)
-    string_stocks = [str(i) for i in stock_data]
-    string_dems = [str(i) for i in dem_data]
-    stock_data = '\n'.join(string_stocks)
-    dem_data = '\n'.join(string_dems)
+    msg = "```%s```\n" % ( table.draw() )
     print('Creating embed...')
-    embed = discord.Embed(title=f"{fcname} ({stn_data['sName']}) stock")
-    embed.add_field(name = 'Commodity', value = name_data, inline = True)
-    embed.add_field(name = 'Amount', value = stock_data, inline = True)
-    # FIXME : Find a way to display demand only if stock is 0 (auto-determine loading mission)
-    # EDSM API cargo tracking is too inconsistent to use for loading missions
-    embed.add_field(name = 'Demand', value = dem_data, inline= True)
-    embed.add_field(name = 'FC Location', value = loc_data, inline= True)
+    embed = discord.Embed()
+    embed.add_field(name = f"{fcname} ({stn_data['sName']}) stock", value = msg, inline = False)
+    embed.add_field(name = 'FC Location', value = loc_data, inline = False)
     embed.set_footer(text='Numbers out of wack? Ensure EDMC is running!')
     print('Embed created!')
-
     await ctx.send(embed=embed)
     print('Embed sent!')
 
