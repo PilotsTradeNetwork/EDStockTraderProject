@@ -177,10 +177,18 @@ async def stock(ctx, fcname):
     table.header(["Commodity", "Amount", "Demand"])
 
     for com in com_data:
-        table.add_row([com['name'], com['stock'], com['demand']])
+        if com['stock'] != 0 or com['demand'] != 0:
+            table.add_row([com['name'], com['stock'], com['demand']])
 
-    msg = "\n> **%s (%s) stock**\n```%s```\n> **FC Location:** %s\n> Numbers out of wack? Ensure EDMC is running!" % ( fcname, stn_data['sName'], table.draw(), loc_data )
-    await ctx.send(msg)
+    msg = "```%s```\n" % ( table.draw() )
+    print('Creating embed...')
+    embed = discord.Embed()
+    embed.add_field(name = f"{fcname} ({stn_data['sName']}) stock", value = msg, inline = False)
+    embed.add_field(name = 'FC Location', value = loc_data, inline = False)
+    embed.set_footer(text='Numbers out of wack? Ensure EDMC is running!')
+    print('Embed created!')
+    await ctx.send(embed=embed)
+    print('Embed sent!')
 
 
 @bot.command(name='del_FC', help='Delete a fleet carrier from the tracking database.\n'
