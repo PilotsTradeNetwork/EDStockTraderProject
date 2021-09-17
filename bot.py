@@ -65,7 +65,7 @@ async def dingle(ctx):
 
 @bot.command(name='add_FC', help='Add a fleet carrier for stock tracking.\n'
                                  'FCCode: Carrier ID Code \n'
-                                 'FCSys: Carrier current system, use "auto" for inara search \n'
+                                 'FCSys: Carrier current system, use "auto", "auto-edsm", or "auto-inara" to search. ("auto" uses edsm)\n'
                                  'FCName: The alias with which you want to refer to the carrier. Please use something '
                                  'simple like "orion" or "9oclock", as this is what you use to call the stock command!'
                                  '\n!!SYSTEMS WITH SPACES IN THE NAMES NEED TO BE "QUOTED LIKE THIS"!! ')
@@ -90,10 +90,14 @@ async def addFC(ctx, FCCode, FCSys, FCName):
 
     print(f'Format is good... Checking database...')
 
-    if FCSys == 'auto':
-        FCSys = inara_find_fc_system(FCCode)
+    if FCSys == 'auto-inara':
+        inara_data = inara_find_fc_system(FCCode)
+        FCSys = inara_data['system']
+    elif FCSys == 'auto-edsm' or FCSys == 'auto':
+        edsm_data = edsm_find_fc_system(FCCode)
+        FCSys = edsm_data['system']
     if FCSys is False:
-        await ctx.send(f'Could not find the FC in inara, please manually supply system name')
+        await ctx.send(f'Could not find the FC system. please manually supply system name')
         return
 
     pmeters = {'systemName': FCSys, 'stationName': FCCode}
@@ -151,8 +155,9 @@ async def APITest(ctx, mark):
     print('Embed sent!')
 
 
-@bot.command(name='stock', help='Returns stock and location of a PTN carrier (carrier needs to be added first)')
-async def stock(ctx, fcname):
+@bot.command(name='stock', help='Returns stock and location of a PTN carrier (carrier needs to be added first)\n'
+                                'source: Optional argument, one of "edsm" or "inara". Defaults to "edsm".')
+async def stock(ctx, fcname, source='edsm'):
     fcname = fcname.lower()
     fcdata = False
     for fc_code, fc_data in FCDATA.items():
@@ -166,9 +171,20 @@ async def stock(ctx, fcname):
         return
 
     await ctx.send(f'Fetching stock levels for **{fcname} ({fccode})**')
-    pmeters = {'marketId': fcdata['FCMid']}
-    r = requests.get('https://www.edsm.net/api-system-v1/stations/market',params=pmeters)
-    stn_data = r.json()
+
+    if source == 'inara':
+        inara_data = inara_find_fc_system(fccode)
+        stn_data = inara_fc_market_data(inara_data['stationid'], fccode)
+    else:
+        pmeters = {'marketId': fcdata['FCMid']}
+        r = requests.get('https://www.edsm.net/api-system-v1/stations/market',params=pmeters)
+        stn_data = r.json()
+
+        edsm_search = edsm_find_fc_system(fccode)
+        if edsm_search:
+            stn_data['market_updated'] = edsm_search['market_updated']
+        else:
+            stn_data['market_updated'] = "Unknown"
 
     com_data = stn_data['commodities']
     loc_data = stn_data['name']
@@ -193,7 +209,7 @@ async def stock(ctx, fcname):
     embed = discord.Embed()
     embed.add_field(name = f"{fcname} ({stn_data['sName']}) stock", value = msg, inline = False)
     embed.add_field(name = 'FC Location', value = loc_data, inline = False)
-    embed.set_footer(text='Numbers out of wack? Ensure EDMC is running!')
+    embed.set_footer(text = f"Data last updated: {stn_data['market_updated']}\nNumbers out of wack? Ensure EDMC is running!")
     print('Embed created!')
     await ctx.send(embed=embed)
     print('Embed sent!')
@@ -400,17 +416,73 @@ def inara_find_fc_system(fcid):
         page = requests.get(URL)
         soup = BeautifulSoup(page.content, "html.parser")
         results = soup.find_all("div", class_="mainblock")
+        stationid = results[1].find("a", class_="inverse", href=True)
         carrier = results[1].find("span", class_="normal")
         system = results[1].find("span", class_="uppercase")
         if fcid == carrier.text[-11:-4]:
-            print("Carrier: %s is at system: %s" % (carrier.text[:-3], system.text))
-            return system.text
+            print("Carrier: %s (stationid %s) is at system: %s" % (carrier.text[:-3], stationid['href'][9:-1], system.text))
+            return {'system': system.text, 'stationid': stationid['href'][9:-1]}
         else:
             print("Could not find exact match, aborting inara search")
             return False
     except:
         print("No results from inara, aborting search.")
         return False
+
+
+def edsm_find_fc_system(fcid):
+    print("Searching edsm for carrier %s" % ( fcid ))
+    URL = "https://www.edsm.net/en/search/stations/index/name/%s/sortBy/distanceSol/type/31" % ( fcid )
+    try:
+        page = requests.get(URL)
+        soup = BeautifulSoup(page.content, "html.parser")
+        results = soup.find("table", class_="table table-hover").find("tbody").find_all("a")
+        carrier = results[0].get_text()
+        system = results[1].get_text()
+        market_updated = results[6].find("i").attrs.get("title")[27:]
+        if fcid == carrier:
+            print("Carrier: %s is at system: %s" % (carrier, system))
+            return {'system': system, 'market_updated': market_updated}
+        else:
+            print("Could not find exact match, aborting inara search")
+            return False
+    except:
+        print("No results from inara, aborting search.")
+        return False
+
+
+def inara_fc_market_data(stationid, fcid):
+    print("Searching inara market data for station: %s (%s)" % ( stationid, fcid ))
+    URL = "https://inara.cz/station/%s" % ( stationid )
+    page = requests.get(URL)
+    soup = BeautifulSoup(page.content, "html.parser")
+    system = soup.find("title").get_text()[21:-8]
+    updated = soup.find("div", text="Market update").next_sibling.get_text()
+    results = soup.find("div", class_="mainblock maintable")
+    rows = results.find("table", class_="tablesorterintab").find("tbody").find_all("tr")
+    marketdata = []
+    for row in rows:
+        rowclass = row.attrs.get("class") or []
+        if "subheader" in rowclass:
+            continue
+        cells = row.find_all("td")
+        rn = cells[0].get_text()
+        commodity = {
+                        'id': rn,
+                        'name': rn,
+                        'sellPrice': cells[1].get_text(),
+                        'buyPrice': cells[2].get_text(),
+                        'demand': cells[3].get_text(),
+                        'stock': cells[4].get_text()
+                    }
+        marketdata.append(commodity)
+    data = {}
+    data['name'] = system
+    data['sName'] = fcid
+    data['stationId'] = stationid
+    data['market_updated'] = updated
+    data['commodities'] = marketdata
+    return data
 
 
 FCDATA = load_carrier_data(CARRIERS)
