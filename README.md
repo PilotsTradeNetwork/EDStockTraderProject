@@ -72,6 +72,36 @@ The bot returns a list of all actively tracked carriers when sent the command ;l
 In order to check a carrier's stock, the carrier must be in the tracked list of carriers. Once this is done using the ;add_FC command, simply check its stock by adding its alias as an argument.
 Example: ;stock alias
 
+## WMM Stock Tracking
+The bot can now track a group of carriers and automatically update stock levels in #wmm-stock
+
+Use the following commands to set up stock tracking for existing Fleet Carriers.
+
+### Start tracking a carrier for WMM
+To begin tracking a Fleet Carrier, use the ;start_wmm_tracking command which takes arguments FCName Station Owner
+
+Example: ;start_wmm_tracking gandalf malerba @somebody
+
+### Stop tracking a carrier or multiple carriers for WMM
+To stop tracking a Fleet Carrier, use the ;stop_wmm_tracking command which takes a single argument of comma seperated carrier name(s)
+
+Example: ;stop_wmm_tracking gandalf,cult,devastator,carrier1,carrier2
+
+### List only WMM tracked carriers
+Example: ;list wmm
+
+### Get / Set the WMM update interval
+To control the delay on updating stock levels in the #wmm-stock room.
+
+Example: ;get_wmm_interval
+
+Example: ;set_wmm_interval 3800
+
+### Manually trigger an update of stock levels
+To trigger an immediate update of stock levels use this command.
+
+Example: ;wmm_stock
+
 ## Thanks
 
 A sincere thankyou to the tools and people which make EDStockTracker's development possible, including:
