@@ -102,6 +102,11 @@ To trigger an immediate update of stock levels use this command.
 
 Example: ;wmm_stock
 
+### Check the status of the background task
+To check if the background task is running or not (and restart it).
+
+Example: ;wmm_status
+
 ## Thanks
 
 A sincere thankyou to the tools and people which make EDStockTracker's development possible, including:
