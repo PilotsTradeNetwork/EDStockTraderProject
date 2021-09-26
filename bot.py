@@ -10,6 +10,7 @@
 # EDSM stations API: https://www.edsm.net/en/api-system-v1
 
 import os
+import sys
 import discord
 import re
 import requests
@@ -21,6 +22,7 @@ from bs4 import BeautifulSoup
 from dotenv import find_dotenv, load_dotenv, set_key
 from discord.ext import commands, tasks
 from datetime import datetime
+import traceback
 
 '''
 # Debugging, used only in dev.
@@ -56,15 +58,17 @@ async def on_ready():
         f'{guild.name} (id: {guild.id})'
     )
 
+    await start_wmm_task()
+    '''
     channel = discord.utils.get(bot.get_all_channels(), guild__name=GUILD, name=WMMCHANNEL)
     print("Clearing last stock update message in #%s" % channel)
     async for message in channel.history(limit=10):
         if message.author.name == bot.user.name and message.content.startswith('WMM Stock:'):
             await message.delete()
     print("Starting WMM stock background task")
-    message = await channel.send('Stock Bot inialized, preparing for WMM stock update.')
+    message = await channel.send('Stock Bot initialized, preparing for WMM stock update.')
     wmm_stock.start(message)
-
+    '''
 
 @tasks.loop(seconds=30)
 async def wmm_stock(message):
@@ -79,7 +83,7 @@ async def wmm_stock(message):
                 wmm_systems.append(fc_data['wmm'])
 
     if wmm_systems == []:
-        await message.edit(content="No Fleet Carriers are currently being tracked for WMM. Please add some to the list!")
+        await message.edit(content="WMM Stock: No Fleet Carriers are currently being tracked for WMM. Please add some to the list!")
         return
 
     content = ['WMM Stock:']
@@ -87,6 +91,12 @@ async def wmm_stock(message):
     for fcid in wmm_carriers:
         carrier_has_stock = False
         stn_data = get_fc_stock(fcid, 'inara')
+        try:
+            utc_time = datetime.strptime(stn_data['market_updated'], "%d %b %Y, %I:%M%p")
+            market_updated = "<t:%d:R>" % utc_time.timestamp()
+        except:
+            market_updated = stn_data['market_updated']
+            pass
         if stn_data == False:
             print("wmm_stock: could not get data for %s (%s)" % ( FCDATA[fcid]['FCName'], fcid ))
             continue
@@ -105,12 +115,12 @@ async def wmm_stock(message):
                 if FCDATA[fcid]['wmm'] not in wmm_stock:
                     wmm_stock[FCDATA[fcid]['wmm']] = []
                 if int(com['stock'].replace(',', '')) < 1000:
-                    wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s (%s) - **%s** - Price: %s - LOW STOCK %s (As of: %s)" % (
-                        com['name'], com['stock'], stn_data['name'], FCDATA[fcid]['wmm'], stn_data['full_name'], com['buyPrice'], FCDATA[fcid]['owner'], stn_data['market_updated'] )
+                    wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s (%s) - **%s** - Price: %s - LOW STOCK %s (As of %s)" % (
+                        com['name'], com['stock'], stn_data['name'], FCDATA[fcid]['wmm'], stn_data['full_name'], com['buyPrice'], FCDATA[fcid]['owner'], market_updated )
                     )
                 else:
-                    wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s (%s) - **%s** - Price: %s (As of: %s)" % (
-                        com['name'], com['stock'], stn_data['name'], FCDATA[fcid]['wmm'], stn_data['full_name'], com['buyPrice'], stn_data['market_updated'] )
+                    wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s (%s) - **%s** - Price: %s (As of %s)" % (
+                        com['name'], com['stock'], stn_data['name'], FCDATA[fcid]['wmm'], stn_data['full_name'], com['buyPrice'], market_updated )
                     )
             '''
             # commented out because of stock bug where any traded commodity shows as 0. no way to filter out.
@@ -121,14 +131,17 @@ async def wmm_stock(message):
                 )
             '''
         if not carrier_has_stock:
-            wmm_stock[FCDATA[fcid]['wmm']].append("**%s** - %s (%s) has no stock of any commodity! %s (As of: %s)" % (
-                stn_data['full_name'], stn_data['name'], FCDATA[fcid]['wmm'], FCDATA[fcid]['owner'], stn_data['market_updated'] )
+            wmm_stock[FCDATA[fcid]['wmm']].append("**%s** - %s (%s) has no stock of any commodity! %s (As of %s)" % (
+                stn_data['full_name'], stn_data['name'], FCDATA[fcid]['wmm'], FCDATA[fcid]['owner'], market_updated )
             )
 
     for system in wmm_systems:
         content.append('-')
-        for line in wmm_stock[system]:
-            content.append(line)
+        if system not in wmm_stock:
+            content.append("Could not find any carriers with stock in %s" % system)
+        else:
+            for line in wmm_stock[system]:
+                content.append(line)
 
     content.append("\nCarrier stocks last checked at %s\nNumbers out of wack? Ensure EDMC is running!" % ( datetime.now().strftime("%d %b %Y %H:%M:%S") ))
     await message.edit(content='\n'.join(content))
@@ -145,6 +158,18 @@ async def wmm_stock(message):
         else:
             await asyncio.sleep(10)
             slept_for = slept_for + 10
+
+
+@wmm_stock.after_loop
+async def wmm_after_loop():
+    if not wmm_stock.is_running() or wmm_stock.failed():
+        print("wmm_stock after_loop(). task has failed.\n")
+
+@wmm_stock.error
+async def wmm_stock_error(error):
+    if not wmm_stock.is_running() or wmm_stock.failed():
+        print("wmm_stock error(). task has failed.\n")
+    traceback.print_exc()
 
 
 #@bot.event
@@ -195,14 +220,14 @@ async def addFC(ctx, FCCode, FCSys, FCName):
     print(f'Format is good... Checking database...')
 
     if FCSys == 'auto-inara':
-        inara_data = inara_find_fc_system(FCCode)
-        FCSys = inara_data['system']
+        search_data = inara_find_fc_system(FCCode)
     elif FCSys == 'auto-edsm' or FCSys == 'auto':
-        edsm_data = edsm_find_fc_system(FCCode)
-        FCSys = edsm_data['system']
-    if FCSys is False:
+        search_data = edsm_find_fc_system(FCCode)
+    if search_data is False:
         await ctx.send(f'Could not find the FC system. please manually supply system name')
         return
+    else:
+        FCSys = search_data['system']
 
     pmeters = {'systemName': FCSys, 'stationName': FCCode}
     r = requests.get('https://www.edsm.net/api-system-v1/stations/market', params=pmeters)
@@ -498,15 +523,26 @@ async def wmmstock(ctx):
     global wmm_trigger
     wmm_trigger = True
     await ctx.send(f'wmm stock update triggered, please stand by.')
+    if not wmm_stock.is_running() or wmm_stock.failed():
+        print("wmm_stock task has failed, restarting.")
+        await ctx.send(f'wmm stock background task has failed, restarting...')
+        await start_wmm_task()
+
+
+@bot.command(name='wmm_status', help='Check the wmm background task status')
+@commands.has_any_role('Bot Handler', 'Admin', 'Mod')
+async def wmmstatus(ctx):
+    if not wmm_stock.is_running() or wmm_stock.failed():
+        await ctx.send(f'wmm stock background task has failed, restarting...')
+        await start_wmm_task()
+    else:
+        await ctx.send(f'wmm stock background task is running.')
 
 
 @bot.event
 async def on_error(event, *args, **kwargs):
-    with open('err.log','a') as f:
-        if event == 'on_message':
-            f.write(f'Unhandled message: {args[0]}\n')
-        else:
-            raise
+    traceback.print_exc()
+    raise
 
 
 @bot.event
@@ -605,42 +641,46 @@ def edsm_find_fc_system(fcid):
             #print("Could not find exact match, aborting inara search")
             return False
     except:
-        print("No results from inara for %s, aborting search." % fcid)
+        print("No results from edsm for %s, aborting search." % fcid)
         return False
 
 
 def inara_fc_market_data(stationid, fcid):
     #print("Searching inara market data for station: %s (%s)" % ( stationid, fcid ))
-    URL = "https://inara.cz/station/%s" % ( stationid )
-    page = requests.get(URL)
-    soup = BeautifulSoup(page.content, "html.parser")
-    system = soup.find("title").get_text()[21:-8]
-    updated = soup.find("div", text="Market update").next_sibling.get_text()
-    results = soup.find("div", class_="mainblock maintable")
-    rows = results.find("table", class_="tablesorterintab").find("tbody").find_all("tr")
-    marketdata = []
-    for row in rows:
-        rowclass = row.attrs.get("class") or []
-        if "subheader" in rowclass:
-            continue
-        cells = row.find_all("td")
-        rn = cells[0].get_text()
-        commodity = {
-                        'id': rn,
-                        'name': rn,
-                        'sellPrice': cells[1].get_text(),
-                        'buyPrice': cells[2].get_text(),
-                        'demand': cells[3].get_text().replace('-', '0'),
-                        'stock': cells[4].get_text().replace('-', '0')
-                    }
-        marketdata.append(commodity)
-    data = {}
-    data['name'] = system
-    data['sName'] = fcid
-    data['stationId'] = stationid
-    data['market_updated'] = updated
-    data['commodities'] = marketdata
-    return data
+    try:
+        URL = "https://inara.cz/station/%s" % ( stationid )
+        page = requests.get(URL)
+        soup = BeautifulSoup(page.content, "html.parser")
+        system = soup.find("title").get_text()[21:-8]
+        updated = soup.find("div", text="Market update").next_sibling.get_text()
+        results = soup.find("div", class_="mainblock maintable")
+        rows = results.find("table", class_="tablesorterintab").find("tbody").find_all("tr")
+        marketdata = []
+        for row in rows:
+            rowclass = row.attrs.get("class") or []
+            if "subheader" in rowclass:
+                continue
+            cells = row.find_all("td")
+            rn = cells[0].get_text()
+            commodity = {
+                            'id': rn,
+                            'name': rn,
+                            'sellPrice': cells[1].get_text(),
+                            'buyPrice': cells[2].get_text(),
+                            'demand': cells[3].get_text().replace('-', '0'),
+                            'stock': cells[4].get_text().replace('-', '0')
+                        }
+            marketdata.append(commodity)
+        data = {}
+        data['name'] = system
+        data['sName'] = fcid
+        data['stationId'] = stationid
+        data['market_updated'] = updated
+        data['commodities'] = marketdata
+        return data
+    except Exception as e:
+        print("Exception getting inara data: %s" % e)
+        return False
 
 
 def get_fccode(fcname):
@@ -661,6 +701,8 @@ def get_fc_stock(fccode, source='edsm'):
         inara_data = inara_find_fc_system(fccode)
         if inara_data:
             stn_data = inara_fc_market_data(inara_data['stationid'], fccode)
+            if not stn_data:
+                return False
             stn_data['full_name'] = inara_data['full_name']
         else:
             return False
@@ -676,6 +718,20 @@ def get_fc_stock(fccode, source='edsm'):
             stn_data['market_updated'] = "Unknown"
         stn_data['full_name'] = False
     return stn_data
+
+
+async def start_wmm_task():
+    if wmm_stock.is_running():
+        print("def start_wmm_task: task is_running(), cannot start.")
+        return False
+    channel = discord.utils.get(bot.get_all_channels(), guild__name=GUILD, name=WMMCHANNEL)
+    print("Clearing last stock update message in #%s" % channel)
+    async for message in channel.history(limit=20):
+        if message.author.name == bot.user.name:
+            await message.delete()
+    print("Starting WMM stock background task")
+    message = await channel.send('Stock Bot initialized, preparing for WMM stock update.')
+    wmm_stock.start(message)
 
 
 FCDATA = load_carrier_data(CARRIERS)
