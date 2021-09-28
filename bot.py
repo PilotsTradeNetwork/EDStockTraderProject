@@ -91,6 +91,9 @@ async def wmm_stock(message):
     for fcid in wmm_carriers:
         carrier_has_stock = False
         stn_data = get_fc_stock(fcid, 'inara')
+        if not stn_data:
+            print("Inara stock check for carrier '%s' failed, skipping." % FCDATA[fcid]['FCName'])
+            continue
         try:
             utc_time = datetime.strptime(stn_data['market_updated'], "%d %b %Y, %I:%M%p")
             market_updated = "<t:%d:R>" % utc_time.timestamp()
@@ -605,7 +608,8 @@ def save_wmm_interval(wmm_interval):
 
 def inara_find_fc_system(fcid):
     #print("Searching inara for carrier %s" % ( fcid ))
-    URL = "https://inara.cz/station/?search=%s" % ( fcid )
+    #URL = "https://inara.cz/station/?search=%s" % ( fcid )
+    URL = "https://inara.cz/search/?search=%s" % ( fcid )
     try:
         page = requests.get(URL)
         soup = BeautifulSoup(page.content, "html.parser")
@@ -619,8 +623,9 @@ def inara_find_fc_system(fcid):
         else:
             #print("Could not find exact match, aborting inara search")
             return False
-    except:
-        print("No results from inara for %s, aborting search." % fcid)
+    except Exception as e:
+        print("No results from inara for %s, aborting search. Error: %s" % ( fcid, e ))
+        traceback.print_exc()
         return False
 
 
