@@ -474,7 +474,7 @@ async def fclist(ctx, Filter=None):
                                     'FCName: name of an existing fleet carrier\n'
                                     'Station: name of the closest station to the carrier. For display purposes only\n'
                                     'Owner: the discord owner to notify on empty stock')
-@commands.has_any_role('Bot Handler', 'Admin', 'Mod')
+@commands.has_any_role('Bot Handler', 'Admin', 'Mod', 'Certified Carrier')
 async def addwmm(ctx, FCName, station, owner):
     fccode = get_fccode(FCName)
     if not fccode:
@@ -490,7 +490,7 @@ async def addwmm(ctx, FCName, station, owner):
 @bot.command(name='stop_wmm_tracking', help='Stop tracking a Fleet Carrier(s) for the WMM stock list. \n'
                                     'FCName: name of an existing fleet carrier(s).\n'
                                     'Multiple carriers can be specified using comma seperation. \n')
-@commands.has_any_role('Bot Handler', 'Admin', 'Mod')
+@commands.has_any_role('Bot Handler', 'Admin', 'Mod', 'Certified Carrier')
 async def delwmm(ctx, FCName):
     carriers = FCName.split(',')
     for carrier in carriers:
@@ -521,7 +521,7 @@ async def getwmminterval(ctx):
 
 
 @bot.command(name='wmm_stock', help='Manually trigger the wmm stock update without changing the interval.')
-@commands.has_any_role('Bot Handler', 'Admin', 'Mod')
+@commands.has_any_role('Bot Handler', 'Admin', 'Mod', 'Certified Carrier')
 async def wmmstock(ctx):
     global wmm_trigger
     wmm_trigger = True
