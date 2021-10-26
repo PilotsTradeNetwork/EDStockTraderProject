@@ -59,19 +59,9 @@ async def on_ready():
     )
 
     await start_wmm_task()
-    '''
-    channel = discord.utils.get(bot.get_all_channels(), guild__name=GUILD, name=WMMCHANNEL)
-    print("Clearing last stock update message in #%s" % channel)
-    async for message in channel.history(limit=10):
-        if message.author.name == bot.user.name and message.content.startswith('WMM Stock:'):
-            await message.delete()
-    print("Starting WMM stock background task")
-    message = await channel.send('Stock Bot initialized, preparing for WMM stock update.')
-    wmm_stock.start(message)
-    '''
 
 @tasks.loop(seconds=30)
-async def wmm_stock(message):
+async def wmm_stock(message, channel):
     global wmm_trigger
     wmm_commodities = ['indite', 'bertrandite', 'gold', 'silver']
     wmm_carriers = []
@@ -83,10 +73,15 @@ async def wmm_stock(message):
                 wmm_systems.append(fc_data['wmm'])
 
     if wmm_systems == []:
-        await message.edit(content="WMM Stock: No Fleet Carriers are currently being tracked for WMM. Please add some to the list!")
+        nofc = "WMM Stock: No Fleet Carriers are currently being tracked for WMM. Please add some to the list!"
+        try:
+            await message.edit(content=nofc)
+        except:
+            await clear_history(channel)
+            await channel.send(nofc)
         return
 
-    content = ['WMM Stock:']
+    content = {}
     wmm_stock = {}
     for fcid in wmm_carriers:
         carrier_has_stock = False
@@ -106,7 +101,7 @@ async def wmm_stock(message):
         com_data = stn_data['commodities']
         # Indite x 11.8k - Wally (Malerba) - P.T.N. Candy Van - Price: 34,789cr - @CMDR Sofiya Khlynina
         if com_data == []:
-            content.append("**%s** - %s (%s) has no current market data. please visit the carrier with EDMC running" % (
+            content[FCDATA[fcid]['wmm']].append("**%s** - %s (%s) has no current market data. please visit the carrier with EDMC running" % (
                 stn_data['full_name'], stn_data['name'], FCDATA[fcid]['wmm'] )
             )
             continue
@@ -118,36 +113,59 @@ async def wmm_stock(message):
                 if FCDATA[fcid]['wmm'] not in wmm_stock:
                     wmm_stock[FCDATA[fcid]['wmm']] = []
                 if int(com['stock'].replace(',', '')) < 1000:
+                    #wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s - **%s** - Price: %s - LOW STOCK %s (As of %s)" % (
+                    #    com['name'], com['stock'], FCDATA[fcid]['wmm'], stn_data['full_name'][:-10], com['buyPrice'], FCDATA[fcid]['owner'], market_updated )
+                    #)
                     wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s (%s) - **%s** - Price: %s - LOW STOCK %s (As of %s)" % (
                         com['name'], com['stock'], stn_data['name'], FCDATA[fcid]['wmm'], stn_data['full_name'], com['buyPrice'], FCDATA[fcid]['owner'], market_updated )
                     )
                 else:
+                    #wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s - **%s** - Price: %s (As of %s)" % (
+                    #    com['name'], com['stock'], FCDATA[fcid]['wmm'], stn_data['full_name'][:-10], com['buyPrice'], market_updated )
+                    #)
                     wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s (%s) - **%s** - Price: %s (As of %s)" % (
                         com['name'], com['stock'], stn_data['name'], FCDATA[fcid]['wmm'], stn_data['full_name'], com['buyPrice'], market_updated )
                     )
-            '''
-            # commented out because of stock bug where any traded commodity shows as 0. no way to filter out.
-            # we use carrier_has_stock bool instead.
-            else:
-                content.append("%s x %s - %s (%s) - %s - Price: %s - OUT OF STOCK" % (
-                     com['name'], com['stock'], stn_data['name'], FCDATA[fcid]['wmm'], stn_data['ful_name'], com['buyPrice'] )
-                )
-            '''
         if not carrier_has_stock:
+            #wmm_stock[FCDATA[fcid]['wmm']].append("**%s** - %s has no stock of any commodity! %s (As of %s)" % (
+            #    stn_data['full_name'][:-10], FCDATA[fcid]['wmm'], FCDATA[fcid]['owner'], market_updated )
+            #)
             wmm_stock[FCDATA[fcid]['wmm']].append("**%s** - %s (%s) has no stock of any commodity! %s (As of %s)" % (
                 stn_data['full_name'], stn_data['name'], FCDATA[fcid]['wmm'], FCDATA[fcid]['owner'], market_updated )
             )
 
     for system in wmm_systems:
-        content.append('-')
+        content[system] = []
+        content[system].append('-')
         if system not in wmm_stock:
-            content.append("Could not find any carriers with stock in %s" % system)
+            content[system].append("Could not find any carriers with stock in %s" % system)
         else:
             for line in wmm_stock[system]:
-                content.append(line)
+                content[system].append(line)
 
-    content.append("\nCarrier stocks last checked at %s\nNumbers out of wack? Ensure EDMC is running!" % ( datetime.now().strftime("%d %b %Y %H:%M:%S") ))
-    await message.edit(content='\n'.join(content))
+    try:
+        wmm_updated = "<t:%d:R>" % datetime.now().timestamp()
+    except:
+        wmm_updated = datetime.now().strftime("%d %b %Y %H:%M:%S")
+        pass
+
+    # clear message history
+    await clear_history(channel)
+
+    # for each station, use a new message.
+    # and split messages over 10 lines.
+    # each line is between 120-200 chars
+    # using max: 2000 / 200 = 10
+    for (system, stncontent) in content.items():
+        pages = [page for page in chunk(stncontent, 10)]
+        for page in pages:
+            page.insert(0, ':')
+            await channel.send('\n'.join(page))
+
+    footer = []
+    footer.append(':')
+    footer.append("-\nCarrier stocks last checked %s\nNumbers out of wack? Ensure EDMC is running!" % ( wmm_updated ))
+    await channel.send('\n'.join(footer))
 
     # the following code allows us to change sleep time dynamically
     # waiting at least 10 seconds before checking wmm_interval again
@@ -385,19 +403,7 @@ async def fclist(ctx, Filter=None):
         names = ['No Fleet Carriers are being tracked, add one!']
     print('Listing active carriers')
 
-
     carriers = sorted(names)  # Joining the list with newline as the delimeter
-
-
-    def chunk(chunk_list, max_size=10):
-        """
-        Take an input list, and an expected max_size.
-
-        :returns: A chunked list that is yielded back to the caller
-        :rtype: iterator
-        """
-        for i in range(0, len(chunk_list), max_size):
-            yield chunk_list[i:i + max_size]
 
     def validate_response(react, user):
         return user == ctx.author and str(react.emoji) in ["◀️", "▶️"]
@@ -731,12 +737,29 @@ async def start_wmm_task():
         return False
     channel = discord.utils.get(bot.get_all_channels(), guild__name=GUILD, name=WMMCHANNEL)
     print("Clearing last stock update message in #%s" % channel)
-    async for message in channel.history(limit=20):
-        if message.author.name == bot.user.name:
-            await message.delete()
+    await clear_history(channel)
     print("Starting WMM stock background task")
     message = await channel.send('Stock Bot initialized, preparing for WMM stock update.')
-    wmm_stock.start(message)
+    wmm_stock.start(message, channel)
+
+
+def chunk(chunk_list, max_size=10):
+    """
+    Take an input list, and an expected max_size.
+
+    :returns: A chunked list that is yielded back to the caller
+    :rtype: iterator
+    """
+    for i in range(0, len(chunk_list), max_size):
+        yield chunk_list[i:i + max_size]
+
+
+async def clear_history(channel, limit=20):
+    msgs = []
+    async for message in channel.history(limit=limit):
+        if message.author.name == bot.user.name:
+            msgs.append(message)
+    await channel.delete_messages(msgs)
 
 
 FCDATA = load_carrier_data(CARRIERS)
