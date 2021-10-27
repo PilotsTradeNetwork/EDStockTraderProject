@@ -116,9 +116,26 @@ async def wmm_stock(message, channel):
                     #wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s - **%s** - Price: %s - LOW STOCK %s (As of %s)" % (
                     #    com['name'], com['stock'], FCDATA[fcid]['wmm'], stn_data['full_name'][:-10], com['buyPrice'], FCDATA[fcid]['owner'], market_updated )
                     #)
-                    wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s (%s) - **%s** - Price: %s - LOW STOCK %s (As of %s)" % (
-                        com['name'], com['stock'], stn_data['name'], FCDATA[fcid]['wmm'], stn_data['full_name'], com['buyPrice'], FCDATA[fcid]['owner'], market_updated )
+                    wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s (%s) - **%s** - Price: %s - LOW STOCK (As of %s)" % (
+                        com['name'], com['stock'], stn_data['name'], FCDATA[fcid]['wmm'], stn_data['full_name'], com['buyPrice'], market_updated )
                     )
+                    if 'notified' not in FCDATA[fcid]:
+                        # catch wmm objects created before this update.
+                        FCDATA[fcid]['notified'] = {}
+                    if com['name'] not in FCDATA[fcid]['notified']:
+                        # Notify the owner once per commodity per wmm_tracking session.
+                        try:
+                            ownerid = "".join(re.findall(r'\d+',FCDATA[fcid]['owner']))
+                            ownerdm = bot.get_user(int(ownerid))
+                            await ownerdm.send("Your Fleet Carrier **%s** is low on %s - %s remaining as of %s" % (
+                                stn_data['full_name'], com['name'], com['stock'], market_updated )
+                            )
+                            FCDATA[fcid]['notified'][com['name']] = True
+                            save_carrier_data(FCDATA)
+                        except Exception as e:
+                            # couldnt send a DM, most likely wrong owner supplied or discord perms.
+                            print("Could not notify carrier %s owner %s via DM: %s" % ( FCDATA[fcid]['FCName'], FCDATA[fcid]['owner'], e))
+                            pass
                 else:
                     #wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s - **%s** - Price: %s (As of %s)" % (
                     #    com['name'], com['stock'], FCDATA[fcid]['wmm'], stn_data['full_name'][:-10], com['buyPrice'], market_updated )
@@ -240,6 +257,7 @@ async def addFC(ctx, FCCode, FCSys, FCName):
 
     print(f'Format is good... Checking database...')
 
+    search_data = None
     if FCSys == 'auto-inara':
         search_data = inara_find_fc_system(FCCode)
     elif FCSys == 'auto-edsm' or FCSys == 'auto':
@@ -247,19 +265,22 @@ async def addFC(ctx, FCCode, FCSys, FCName):
     if search_data is False:
         await ctx.send(f'Could not find the FC system. please manually supply system name')
         return
-    else:
+    elif search_data is not None:
         FCSys = search_data['system']
+    try:
+        pmeters = {'systemName': FCSys, 'stationName': FCCode}
+        r = requests.get('https://www.edsm.net/api-system-v1/stations/market', params=pmeters)
+        mid = r.json()
 
-    pmeters = {'systemName': FCSys, 'stationName': FCCode}
-    r = requests.get('https://www.edsm.net/api-system-v1/stations/market', params=pmeters)
-
-    mid = r.json()
-
-    if r.text=='{}':
-        await ctx.send(f'FC does not exist in the EDSM database, check to make sure the inputs are correct!')
+        if r.text=='{}':
+            await ctx.send(f'FC does not exist in the EDSM database, check to make sure the inputs are correct!')
+            return
+        else:
+            await ctx.send(f'This FC is NOT a lie!')
+    except:
+        print("Failure getting edsm data")
+        await ctx.send(f'Failed getting EDSM data, please try again.')
         return
-    else:
-        await ctx.send(f'This FC is NOT a lie!')
 
     print(mid['marketId'])
     midstr = str(mid['marketId'])
@@ -489,6 +510,7 @@ async def addwmm(ctx, FCName, station, owner):
 
     FCDATA[fccode]['wmm'] = "%s" % station.title()
     FCDATA[fccode]['owner'] = owner
+    FCDATA[fccode]['notified'] = {}
     save_carrier_data(FCDATA)
     await ctx.send(f'Carrier {FCName} ({fccode}) has been added to WMM stock list')
 
@@ -507,6 +529,7 @@ async def delwmm(ctx, FCName):
 
         FCDATA[fccode].pop('wmm', None)
         FCDATA[fccode].pop('owner', None)
+        FCDATA[fccode].pop('notified', None)
         await ctx.send(f'Carrier {carrier} ({fccode}) has been removed from the WMM stock list')
     save_carrier_data(FCDATA)
 
