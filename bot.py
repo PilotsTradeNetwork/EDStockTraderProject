@@ -24,16 +24,6 @@ from discord.ext import commands, tasks
 from datetime import datetime
 import traceback
 
-'''
-# Debugging, used only in dev.
-import logging
-logger = logging.getLogger('discord')
-logger.setLevel(logging.DEBUG)
-handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
-handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
-logger.addHandler(handler)
-'''
-
 carrierdb = '.carriers'
 load_dotenv()
 load_dotenv(carrierdb)
@@ -41,6 +31,7 @@ TOKEN = os.getenv('DISCORD_TOKEN')
 GUILD = os.getenv('DISCORD_GUILD')
 CARRIERS = os.getenv('FLEET_CARRIERS')
 WMMCHANNEL = os.getenv('WMM_CHANNEL', '📦wmm-stock')
+ENV = os.getenv('ENV', 'prod')
 wmm_interval = int(os.getenv('WMM_INTERVAL', 3600))
 wmm_trigger = False
 intents = discord.Intents.default()
@@ -48,14 +39,22 @@ intents.members = True
 
 bot = commands.Bot(command_prefix=';', intents=intents)
 
+if ENV != 'prod':
+    # Debugging, used only in dev.
+    import logging
+    logger = logging.getLogger('discord')
+    logger.setLevel(logging.DEBUG)
+    handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
+    handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
+    logger.addHandler(handler)
 
 @bot.event
 async def on_ready():
     guild = discord.utils.get(bot.guilds, name = GUILD) #bot.guilds is a list of all connected servers
 
     print(
-        f'{bot.user.name} is connected to \n'
-        f'{guild.name} (id: {guild.id})'
+        f'{bot.user.name} is connected to {guild.name} (id: {guild.id})\n'
+        f'Bot is running in env: {ENV}'
     )
 
     await start_wmm_task()
@@ -125,7 +124,9 @@ async def wmm_stock(message, channel):
                     if com['name'] not in FCDATA[fcid]['notified']:
                         # Notify the owner once per commodity per wmm_tracking session.
                         try:
-                            ownerid = "".join(re.findall(r'\d+',FCDATA[fcid]['owner']))
+                            ownerid = "".join(re.findall(r'\d+',str(FCDATA[fcid]['owner'])))
+                            if ENV == 'dev':
+                                ownerid = os.getenv('DEVOWNERID', None)
                             ownerdm = bot.get_user(int(ownerid))
                             await ownerdm.send("Your Fleet Carrier **%s** is low on %s - %s remaining as of %s" % (
                                 stn_data['full_name'], com['name'], com['stock'], market_updated )
@@ -500,13 +501,17 @@ async def fclist(ctx, Filter=None):
 @bot.command(name='start_wmm_tracking', help='Start tracking a FC for the WMM stock list. \n'
                                     'FCName: name of an existing fleet carrier\n'
                                     'Station: name of the closest station to the carrier. For display purposes only\n'
-                                    'Owner: the discord owner to notify on empty stock')
+                                    'Owner: (optional) the discord owner ID or @mention to notify on empty stock. If not specified, takes the ID of the user typing the command.\n'
+                                    '!! STATIONS WITH SPACES IN THE NAMES NEED TO BE "QUOTED LIKE THIS" !!\n')
 @commands.has_any_role('Bot Handler', 'Admin', 'Mod', 'Certified Carrier')
-async def addwmm(ctx, FCName, station, owner):
+async def addwmm(ctx, FCName, station, owner=None):
     fccode = get_fccode(FCName)
     if not fccode:
         await ctx.send('The requested carrier is not in the list! Add carriers using the add_FC command!')
         return
+
+    if not owner:
+        owner = ctx.author.id
 
     FCDATA[fccode]['wmm'] = "%s" % station.title()
     FCDATA[fccode]['owner'] = owner
@@ -579,6 +584,11 @@ async def on_error(event, *args, **kwargs):
 
 @bot.event
 async def on_command_error(ctx, error):
+    if ENV == 'dev':
+        from pprint import pprint
+        print('== Start Command Error ==')
+        pprint(error)
+        print('== End Command Error ==')
     if isinstance(error, commands.errors.CheckFailure):
         await ctx.send('You do not have the correct role for this command.')
 
