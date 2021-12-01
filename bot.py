@@ -32,6 +32,8 @@ GUILD = os.getenv('DISCORD_GUILD')
 CARRIERS = os.getenv('FLEET_CARRIERS')
 WMMCHANNEL = os.getenv('WMM_CHANNEL', '📦wmm-stock')
 ENV = os.getenv('ENV', 'prod')
+API_HOST = os.getenv('API_HOST')
+API_TOKEN = os.getenv('API_TOKEN')
 wmm_interval = int(os.getenv('WMM_INTERVAL', 3600))
 wmm_trigger = False
 intents = discord.Intents.default()
@@ -59,8 +61,10 @@ async def on_ready():
 
     await start_wmm_task()
 
+
 @tasks.loop(seconds=30)
 async def wmm_stock(message, channel):
+    print(f"wmm_stock function start")
     global wmm_trigger
     wmm_commodities = ['indite', 'bertrandite', 'gold', 'silver']
     wmm_carriers = []
@@ -84,72 +88,95 @@ async def wmm_stock(message, channel):
     wmm_stock = {}
     for fcid in wmm_carriers:
         carrier_has_stock = False
-        stn_data = get_fc_stock(fcid, 'inara')
-        if not stn_data:
-            print("Inara stock check for carrier '%s' failed, skipping." % FCDATA[fcid]['FCName'])
+        print(f"Calling CApi for carrier {fcid}")
+        capi_response = capi(fcid)
+        stn_data = capi_response.json()
+
+        print(f"capi response: {capi_response.status_code}")
+        if capi_response.status_code != 200:
+            # TODO handle missing carriers, auth errors etc.
+            print(f"Error from CAPI for {fcid}: {capi_response.status_code} - {stn_data}")
+            if capi_response.status_code == 500:
+                # this is an internal stockbot api error, dont re-auth for this.
+                print(f"Internal stockbot API error, someone check the logs")
+                continue
+            elif capi_response.status_code == 418:
+                # capi is down for maintenance.
+                message = f"Bleep Bloop: Frontier API is down for maintenance, unable to retrieve stocks for all carriers."
+                await channel.send(message)
+                return
+            elif capi_response.status_code == 400:
+                # User needs to run the ED Launcher from Epic Games.
+                message = f'I was unable to retrieve your carrier stock levels for "{FCDATA[fcid]["FCName"]} ({fcid})" and it looks like you are using Epic Games. Please start Elite Dangerous until at least the main menu to trigger an auth-validation. You can exit the main menu directly afterwards if you want.'
+                await dm_bot_owner(fcid, FCDATA[fcid]['owner'], message)
+            elif capi_response.status_code == 401:
+                # carrier has no oauth, initiate new.
+                print(f'{fcid} has no oauth, initiating new.')
+                r = oauth_new(fcid)
+                oauth_response = r.json()
+                print(f"response {r.status_code} - {oauth_response}")
+                if 'token' in oauth_response:
+                    # TODO: dm owner of bot with oauth link
+                    oauth_url = f"{API_HOST}/generate/{fcid}?token={oauth_response['token']}"
+                    message = f'I was unable to retrieve your carrier stock levels. Please allow me access to track your carrier "{FCDATA[fcid]["FCName"]} ({fcid})" data by linking me to your Frontier account here: {oauth_url}'
+                    await dm_bot_owner(fcid, FCDATA[fcid]['owner'], message)
+                continue
+            else:
+                # all other unknown errors.
+                print(f"Unknown error from CAPI, see above for details.")
+                continue
+
+        if 'market' not in stn_data:
+            print(f"No market data for {fcid}")
             continue
-        try:
-            utc_time = datetime.strptime(stn_data['market_updated'], "%d %b %Y, %I:%M%p")
-            market_updated = "<t:%d:R>" % utc_time.timestamp()
-        except:
-            market_updated = stn_data['market_updated']
-            pass
-        if stn_data == False:
-            print("wmm_stock: could not get data for %s (%s)" % ( FCDATA[fcid]['FCName'], fcid ))
-            continue
-        com_data = stn_data['commodities']
+
+        #market_updated = "<t:%d:R>" % datetime.now().timestamp()
+        carrier_name = f"{from_hex(stn_data['name']['vanityName']).title().strip()} ({stn_data['name']['callsign']})"
+
+        com_data = stn_data['market']['commodities']
         # Indite x 11.8k - Wally (Malerba) - P.T.N. Candy Van - Price: 34,789cr - @CMDR Sofiya Khlynina
         if com_data == []:
             content[FCDATA[fcid]['wmm']].append("**%s** - %s (%s) has no current market data. please visit the carrier with EDMC running" % (
-                stn_data['full_name'], stn_data['name'], FCDATA[fcid]['wmm'] )
+                carrier_name, stn_data['currentStarSystem'], FCDATA[fcid]['wmm'] )
             )
             continue
         for com in com_data:
+            if FCDATA[fcid]['wmm'] not in wmm_stock:
+                wmm_stock[FCDATA[fcid]['wmm']] = []
             if com['name'].lower() not in wmm_commodities:
                 continue
             if com['stock'] != 0:
                 carrier_has_stock = True
-                if FCDATA[fcid]['wmm'] not in wmm_stock:
-                    wmm_stock[FCDATA[fcid]['wmm']] = []
-                if int(com['stock'].replace(',', '')) < 1000:
+                if int(com['stock']) < 1000:
                     #wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s - **%s** - Price: %s - LOW STOCK %s (As of %s)" % (
                     #    com['name'], com['stock'], FCDATA[fcid]['wmm'], stn_data['full_name'][:-10], com['buyPrice'], FCDATA[fcid]['owner'], market_updated )
                     #)
-                    wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s (%s) - **%s** - Price: %s - LOW STOCK (As of %s)" % (
-                        com['name'], com['stock'], stn_data['name'], FCDATA[fcid]['wmm'], stn_data['full_name'], com['buyPrice'], market_updated )
+                    wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s (%s) - **%s** - Price: %s - LOW STOCK" % (
+                        com['name'], format(com['stock'], ','), stn_data['currentStarSystem'], FCDATA[fcid]['wmm'], carrier_name, format(com['buyPrice'], ',') )
                     )
                     if 'notified' not in FCDATA[fcid]:
                         # catch wmm objects created before this update.
                         FCDATA[fcid]['notified'] = {}
                     if com['name'] not in FCDATA[fcid]['notified']:
                         # Notify the owner once per commodity per wmm_tracking session.
-                        try:
-                            ownerid = "".join(re.findall(r'\d+',str(FCDATA[fcid]['owner'])))
-                            if ENV == 'dev':
-                                ownerid = os.getenv('DEVOWNERID', None)
-                            ownerdm = bot.get_user(int(ownerid))
-                            await ownerdm.send("Your Fleet Carrier **%s** is low on %s - %s remaining as of %s" % (
-                                stn_data['full_name'], com['name'], com['stock'], market_updated )
-                            )
+                        message = "Your Fleet Carrier **%s** is low on %s - %s remaining" % (
+                                carrier_name, com['name'], com['stock'] )
+                        if await dm_bot_owner(fcid, FCDATA[fcid]['owner'], message):
                             FCDATA[fcid]['notified'][com['name']] = True
                             save_carrier_data(FCDATA)
-                        except Exception as e:
-                            # couldnt send a DM, most likely wrong owner supplied or discord perms.
-                            print("Could not notify carrier %s owner %s via DM: %s" % ( FCDATA[fcid]['FCName'], FCDATA[fcid]['owner'], e))
-                            pass
                 else:
                     #wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s - **%s** - Price: %s (As of %s)" % (
                     #    com['name'], com['stock'], FCDATA[fcid]['wmm'], stn_data['full_name'][:-10], com['buyPrice'], market_updated )
                     #)
-                    wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s (%s) - **%s** - Price: %s (As of %s)" % (
-                        com['name'], com['stock'], stn_data['name'], FCDATA[fcid]['wmm'], stn_data['full_name'], com['buyPrice'], market_updated )
+                    wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s (%s) - **%s** - Price: %s" % (
+                        com['name'], format(com['stock'], ','), stn_data['currentStarSystem'], FCDATA[fcid]['wmm'], carrier_name, format(com['buyPrice'], ',') )
                     )
         if not carrier_has_stock:
             #wmm_stock[FCDATA[fcid]['wmm']].append("**%s** - %s has no stock of any commodity! %s (As of %s)" % (
             #    stn_data['full_name'][:-10], FCDATA[fcid]['wmm'], FCDATA[fcid]['owner'], market_updated )
             #)
-            wmm_stock[FCDATA[fcid]['wmm']].append("**%s** - %s (%s) has no stock of any commodity! %s (As of %s)" % (
-                stn_data['full_name'], stn_data['name'], FCDATA[fcid]['wmm'], FCDATA[fcid]['owner'], market_updated )
+            wmm_stock[FCDATA[fcid]['wmm']].append("**%s** - %s (%s) has no stock of any WMM commodity!" % (
+                carrier_name, stn_data['currentStarSystem'], FCDATA[fcid]['wmm'] )
             )
 
     for system in wmm_systems:
@@ -182,7 +209,7 @@ async def wmm_stock(message, channel):
 
     footer = []
     footer.append(':')
-    footer.append("-\nCarrier stocks last checked %s\nNumbers out of wack? Ensure EDMC is running!" % ( wmm_updated ))
+    footer.append("-\nCarrier stocks last checked %s" % ( wmm_updated ))
     await channel.send('\n'.join(footer))
 
     # the following code allows us to change sleep time dynamically
@@ -197,7 +224,6 @@ async def wmm_stock(message, channel):
         else:
             await asyncio.sleep(10)
             slept_for = slept_for + 10
-
 
 @wmm_stock.after_loop
 async def wmm_after_loop():
@@ -519,6 +545,21 @@ async def addwmm(ctx, FCName, station, owner=None):
     save_carrier_data(FCDATA)
     await ctx.send(f'Carrier {FCName} ({fccode}) has been added to WMM stock list')
 
+    # do we need to send an oauth url?
+    if 'authed' not in FCDATA[fccode]:
+        r = oauth_new(fccode)
+        oauth_response = r.json()
+        print(f"wmm_auth response {r.status_code} - {oauth_response}")
+        if 'token' in oauth_response:
+            oauth_url = f"{API_HOST}/generate/{fccode}?token={oauth_response['token']}"
+            message = f'Please allow me access to track your carrier "{FCName} ({fccode})" data by linking me to your Frontier account here: {oauth_url}'
+            await dm_bot_owner(fccode, FCDATA[fccode]['owner'], message)
+            await ctx.send(f"wmm auth URL generated, DM sent to carrier owner.")
+            FCDATA[fccode]['authed'] = True
+            save_carrier_data(FCDATA)
+        else:
+            await ctx.send(f"Could not generate auth URL: something went horribly wrong :(")
+
 
 @bot.command(name='stop_wmm_tracking', help='Stop tracking a Fleet Carrier(s) for the WMM stock list. \n'
                                     'FCName: name of an existing fleet carrier(s).\n'
@@ -574,6 +615,27 @@ async def wmmstatus(ctx):
         await start_wmm_task()
     else:
         await ctx.send(f'wmm stock background task is running.')
+
+
+@bot.command(name='wmm_auth', help='Force the (re)generation of a new frontier account access url.\n'
+                                    'FCName: Carrier name.')
+@commands.has_any_role('Bot Handler', 'Admin', 'Mod')
+async def wmmauth(ctx, FCName):
+    FCCode = get_fccode(FCName)
+    if not FCCode:
+        await ctx.send('The requested carrier is not in the list! Add carriers using the add_FC command!')
+        return
+
+    r = oauth_new(FCCode, True)
+    oauth_response = r.json()
+    print(f"wmm_auth response {r.status_code} - {oauth_response}")
+    if 'token' in oauth_response:
+        oauth_url = f"{API_HOST}/generate/{FCCode}?token={oauth_response['token']}"
+        message = f'Please allow me access to track your carrier "{FCName} ({FCCode})" data by linking me to your Frontier account here: {oauth_url}'
+        await dm_bot_owner(FCCode, FCDATA[FCCode]['owner'], message)
+        await ctx.send(f"wmm auth URL generated, DM sent to carrier owner.")
+    else:
+        await ctx.send(f"something went horribly wrong. sorry about that :(")
 
 
 @bot.event
@@ -788,11 +850,56 @@ def chunk(chunk_list, max_size=10):
 
 
 async def clear_history(channel, limit=20):
-    msgs = []
-    async for message in channel.history(limit=limit):
-        if message.author.name == bot.user.name:
-            msgs.append(message)
-    await channel.delete_messages(msgs)
+    try:
+        msgs = []
+        async for message in channel.history(limit=limit):
+            if message.author.name == bot.user.name:
+                msgs.append(message)
+        await channel.delete_messages(msgs)
+    except:
+        # discord doesn't let us delete history after 14 days, nothing we can do.
+        pass
+
+
+async def dm_bot_owner(carrierid, owner, message):
+    try:
+        ownerid = "".join(re.findall(r'\d+',str(owner)))
+        if ENV == 'dev':
+            ownerid = os.getenv('DEVOWNERID', None)
+        ownerdm = bot.get_user(int(ownerid))
+        await ownerdm.send(message)
+        return True
+    except Exception as e:
+        # couldnt send a DM, most likely wrong owner supplied or discord perms.
+        print("Could not notify carrier %s owner %s via DM: %s" % ( carrierid, owner, e))
+        return False
+
+
+def oauth_new(carrierid, force=False):
+    pmeters = {'token': API_TOKEN}
+    if force:
+        pmeters['force'] = "true"
+    #N4M-04Z
+    r = requests.get(f"{API_HOST}/generate/{carrierid}",params=pmeters)
+    return r
+
+
+def capi(carrierid, dev=False):
+    pmeters = {'token': API_TOKEN}
+    if dev:
+        pmeters['dev'] = "true"
+    r = requests.get(f"{API_HOST}/capi/{carrierid}",params=pmeters)
+    return r
+
+
+# function taken from FCMS
+def from_hex(mystr):
+    try:
+        return bytes.fromhex(mystr).decode('utf-8')
+    except TypeError:
+        return "Unregistered Carrier"
+    except ValueError:
+        return "Unregistered Carrier"
 
 
 FCDATA = load_carrier_data(CARRIERS)
