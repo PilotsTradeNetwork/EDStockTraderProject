@@ -41,6 +41,8 @@ bot = commands.Bot(command_prefix=';', intents=intents)
 
 if ENV != 'prod':
     # Debugging, used only in dev.
+    # Add a handler to discords internal logger.
+    # This writes all events to 'discord.log'
     import logging
     logger = logging.getLogger('discord')
     logger.setLevel(logging.DEBUG)
