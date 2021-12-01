@@ -84,6 +84,8 @@ async def wmm_stock(message, channel):
     wmm_stock = {}
     for fcid in wmm_carriers:
         carrier_has_stock = False
+        if FCDATA[fcid]['wmm'] not in wmm_stock:
+            wmm_stock[FCDATA[fcid]['wmm']] = []
         stn_data = get_fc_stock(fcid, 'inara')
         if not stn_data:
             print("Inara stock check for carrier '%s' failed, skipping." % FCDATA[fcid]['FCName'])
@@ -109,8 +111,6 @@ async def wmm_stock(message, channel):
                 continue
             if com['stock'] != 0:
                 carrier_has_stock = True
-                if FCDATA[fcid]['wmm'] not in wmm_stock:
-                    wmm_stock[FCDATA[fcid]['wmm']] = []
                 if int(com['stock'].replace(',', '')) < 1000:
                     #wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s - **%s** - Price: %s - LOW STOCK %s (As of %s)" % (
                     #    com['name'], com['stock'], FCDATA[fcid]['wmm'], stn_data['full_name'][:-10], com['buyPrice'], FCDATA[fcid]['owner'], market_updated )
