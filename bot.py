@@ -177,6 +177,9 @@ async def wmm_stock(message, channel):
     # each line is between 120-200 chars
     # using max: 2000 / 200 = 10
     for (system, stncontent) in content.items():
+        if len(stncontent) == 1:
+            # this station has no carriers, dont bother printing it.
+            continue
         pages = [page for page in chunk(stncontent, 10)]
         for page in pages:
             page.insert(0, ':')
@@ -649,24 +652,21 @@ def save_wmm_interval(wmm_interval):
 
 def inara_find_fc_system(fcid):
     #print("Searching inara for carrier %s" % ( fcid ))
-    #URL = "https://inara.cz/station/?search=%s" % ( fcid )
-    URL = "https://inara.cz/search/?search=%s" % ( fcid )
+    URL = "https://inara.cz/station/?search=%s" % ( fcid )
     try:
         page = requests.get(URL)
         soup = BeautifulSoup(page.content, "html.parser")
-        results = soup.find_all("div", class_="mainblock")
-        stationid = results[1].find("a", class_="inverse", href=True)
-        carrier = results[1].find("span", class_="normal")
-        system = results[1].find("span", class_="uppercase")
-        if fcid == carrier.text[-11:-4]:
+        results = soup.find_all("div", class_="maincontent1")
+        carrier = results[0].find("h3", class_="standardcase").find("a", href=True)
+        system = results[0].find("span", class_="uppercase").find("a", href=True).text
+        if fcid == carrier.text[-8:-1]:
             #print("Carrier: %s (stationid %s) is at system: %s" % (carrier.text[:-3], stationid['href'][9:-1], system.text))
-            return {'system': system.text, 'stationid': stationid['href'][9:-1], 'full_name': carrier.text[:-3] }
+            return {'system': system, 'stationid': carrier['href'][9:-1], 'full_name': carrier.text }
         else:
-            #print("Could not find exact match, aborting inara search")
+            print("Could not find exact match, aborting inara search")
             return False
     except Exception as e:
         print("No results from inara for %s, aborting search. Error: %s" % ( fcid, e ))
-        traceback.print_exc()
         return False
 
 
@@ -691,13 +691,15 @@ def edsm_find_fc_system(fcid):
         return False
 
 
-def inara_fc_market_data(stationid, fcid):
+def inara_fc_market_data(fcid):
     #print("Searching inara market data for station: %s (%s)" % ( stationid, fcid ))
     try:
-        URL = "https://inara.cz/station/%s" % ( stationid )
+        URL = "https://inara.cz/station/?search=%s" % ( fcid )
         page = requests.get(URL)
         soup = BeautifulSoup(page.content, "html.parser")
-        system = soup.find("title").get_text()[21:-8]
+        results = soup.find_all("div", class_="maincontent1")
+        carrier = results[0].find("h3", class_="standardcase").find("a", href=True).text
+        system = results[0].find("span", class_="uppercase").find("a", href=True).text
         updated = soup.find("div", text="Market update").next_sibling.get_text()
         results = soup.find("div", class_="mainblock maintable")
         rows = results.find("table", class_="tablesorterintab").find("tbody").find_all("tr")
@@ -719,13 +721,14 @@ def inara_fc_market_data(stationid, fcid):
             marketdata.append(commodity)
         data = {}
         data['name'] = system
+        data['full_name'] = carrier
         data['sName'] = fcid
-        data['stationId'] = stationid
         data['market_updated'] = updated
         data['commodities'] = marketdata
         return data
     except Exception as e:
-        print("Exception getting inara data: %s" % e)
+        print("Exception getting inara data for carrier: %s" % fcid)
+        #traceback.print_exc()
         return False
 
 
@@ -744,13 +747,8 @@ def get_fccode(fcname):
 
 def get_fc_stock(fccode, source='edsm'):
     if source == 'inara':
-        inara_data = inara_find_fc_system(fccode)
-        if inara_data:
-            stn_data = inara_fc_market_data(inara_data['stationid'], fccode)
-            if not stn_data:
-                return False
-            stn_data['full_name'] = inara_data['full_name']
-        else:
+        stn_data = inara_fc_market_data(fccode)
+        if not stn_data:
             return False
     else:
         pmeters = {'marketId': FCDATA[fccode]['FCMid']}
@@ -791,10 +789,15 @@ def chunk(chunk_list, max_size=10):
 
 async def clear_history(channel, limit=20):
     msgs = []
-    async for message in channel.history(limit=limit):
-        if message.author.name == bot.user.name:
-            msgs.append(message)
-    await channel.delete_messages(msgs)
+    try:
+        async for message in channel.history(limit=limit):
+            if message.author.name == bot.user.name:
+                msgs.append(message)
+        await channel.delete_messages(msgs)
+    except:
+        # cannot delete messages older than 14 days.
+        # don't let this stop the whole process.
+        pass
 
 
 FCDATA = load_carrier_data(CARRIERS)
