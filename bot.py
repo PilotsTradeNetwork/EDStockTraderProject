@@ -24,16 +24,6 @@ from discord.ext import commands, tasks
 from datetime import datetime
 import traceback
 
-'''
-# Debugging, used only in dev.
-import logging
-logger = logging.getLogger('discord')
-logger.setLevel(logging.DEBUG)
-handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
-handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
-logger.addHandler(handler)
-'''
-
 carrierdb = '.carriers'
 load_dotenv()
 load_dotenv(carrierdb)
@@ -41,6 +31,7 @@ TOKEN = os.getenv('DISCORD_TOKEN')
 GUILD = os.getenv('DISCORD_GUILD')
 CARRIERS = os.getenv('FLEET_CARRIERS')
 WMMCHANNEL = os.getenv('WMM_CHANNEL', '📦wmm-stock')
+ENV = os.getenv('ENV', 'prod')
 wmm_interval = int(os.getenv('WMM_INTERVAL', 3600))
 wmm_trigger = False
 intents = discord.Intents.default()
@@ -48,14 +39,24 @@ intents.members = True
 
 bot = commands.Bot(command_prefix=';', intents=intents)
 
+if ENV != 'prod':
+    # Debugging, used only in dev.
+    # Add a handler to discords internal logger.
+    # This writes all events to 'discord.log'
+    import logging
+    logger = logging.getLogger('discord')
+    logger.setLevel(logging.DEBUG)
+    handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
+    handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
+    logger.addHandler(handler)
 
 @bot.event
 async def on_ready():
     guild = discord.utils.get(bot.guilds, name = GUILD) #bot.guilds is a list of all connected servers
 
     print(
-        f'{bot.user.name} is connected to \n'
-        f'{guild.name} (id: {guild.id})'
+        f'{bot.user.name} is connected to {guild.name} (id: {guild.id})\n'
+        f'Bot is running in env: {ENV}'
     )
 
     await start_wmm_task()
@@ -85,6 +86,8 @@ async def wmm_stock(message, channel):
     wmm_stock = {}
     for fcid in wmm_carriers:
         carrier_has_stock = False
+        if FCDATA[fcid]['wmm'] not in wmm_stock:
+            wmm_stock[FCDATA[fcid]['wmm']] = []
         stn_data = get_fc_stock(fcid, 'inara')
         if not stn_data:
             print("Inara stock check for carrier '%s' failed, skipping." % FCDATA[fcid]['FCName'])
@@ -110,8 +113,6 @@ async def wmm_stock(message, channel):
                 continue
             if com['stock'] != 0:
                 carrier_has_stock = True
-                if FCDATA[fcid]['wmm'] not in wmm_stock:
-                    wmm_stock[FCDATA[fcid]['wmm']] = []
                 if int(com['stock'].replace(',', '')) < 1000:
                     #wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s - **%s** - Price: %s - LOW STOCK %s (As of %s)" % (
                     #    com['name'], com['stock'], FCDATA[fcid]['wmm'], stn_data['full_name'][:-10], com['buyPrice'], FCDATA[fcid]['owner'], market_updated )
@@ -125,7 +126,9 @@ async def wmm_stock(message, channel):
                     if com['name'] not in FCDATA[fcid]['notified']:
                         # Notify the owner once per commodity per wmm_tracking session.
                         try:
-                            ownerid = "".join(re.findall(r'\d+',FCDATA[fcid]['owner']))
+                            ownerid = "".join(re.findall(r'\d+',str(FCDATA[fcid]['owner'])))
+                            if ENV == 'dev':
+                                ownerid = os.getenv('DEVOWNERID', None)
                             ownerdm = bot.get_user(int(ownerid))
                             await ownerdm.send("Your Fleet Carrier **%s** is low on %s - %s remaining as of %s" % (
                                 stn_data['full_name'], com['name'], com['stock'], market_updated )
@@ -174,6 +177,9 @@ async def wmm_stock(message, channel):
     # each line is between 120-200 chars
     # using max: 2000 / 200 = 10
     for (system, stncontent) in content.items():
+        if len(stncontent) == 1:
+            # this station has no carriers, dont bother printing it.
+            continue
         pages = [page for page in chunk(stncontent, 10)]
         for page in pages:
             page.insert(0, ':')
@@ -500,13 +506,17 @@ async def fclist(ctx, Filter=None):
 @bot.command(name='start_wmm_tracking', help='Start tracking a FC for the WMM stock list. \n'
                                     'FCName: name of an existing fleet carrier\n'
                                     'Station: name of the closest station to the carrier. For display purposes only\n'
-                                    'Owner: the discord owner to notify on empty stock')
+                                    'Owner: (optional) the discord owner ID or @mention to notify on empty stock. If not specified, takes the ID of the user typing the command.\n'
+                                    '!! STATIONS WITH SPACES IN THE NAMES NEED TO BE "QUOTED LIKE THIS" !!\n')
 @commands.has_any_role('Bot Handler', 'Admin', 'Mod', 'Certified Carrier')
-async def addwmm(ctx, FCName, station, owner):
+async def addwmm(ctx, FCName, station, owner=None):
     fccode = get_fccode(FCName)
     if not fccode:
         await ctx.send('The requested carrier is not in the list! Add carriers using the add_FC command!')
         return
+
+    if not owner:
+        owner = ctx.author.id
 
     FCDATA[fccode]['wmm'] = "%s" % station.title()
     FCDATA[fccode]['owner'] = owner
@@ -579,6 +589,11 @@ async def on_error(event, *args, **kwargs):
 
 @bot.event
 async def on_command_error(ctx, error):
+    if ENV == 'dev':
+        from pprint import pprint
+        print('== Start Command Error ==')
+        pprint(error)
+        print('== End Command Error ==')
     if isinstance(error, commands.errors.CheckFailure):
         await ctx.send('You do not have the correct role for this command.')
 
@@ -637,24 +652,21 @@ def save_wmm_interval(wmm_interval):
 
 def inara_find_fc_system(fcid):
     #print("Searching inara for carrier %s" % ( fcid ))
-    #URL = "https://inara.cz/station/?search=%s" % ( fcid )
-    URL = "https://inara.cz/search/?search=%s" % ( fcid )
+    URL = "https://inara.cz/station/?search=%s" % ( fcid )
     try:
         page = requests.get(URL)
         soup = BeautifulSoup(page.content, "html.parser")
-        results = soup.find_all("div", class_="mainblock")
-        stationid = results[1].find("a", class_="inverse", href=True)
-        carrier = results[1].find("span", class_="normal")
-        system = results[1].find("span", class_="uppercase")
-        if fcid == carrier.text[-11:-4]:
+        results = soup.find_all("div", class_="maincontent1")
+        carrier = results[0].find("h3", class_="standardcase").find("a", href=True)
+        system = results[0].find("span", class_="uppercase").find("a", href=True).text
+        if fcid == carrier.text[-8:-1]:
             #print("Carrier: %s (stationid %s) is at system: %s" % (carrier.text[:-3], stationid['href'][9:-1], system.text))
-            return {'system': system.text, 'stationid': stationid['href'][9:-1], 'full_name': carrier.text[:-3] }
+            return {'system': system, 'stationid': carrier['href'][9:-1], 'full_name': carrier.text }
         else:
-            #print("Could not find exact match, aborting inara search")
+            print("Could not find exact match, aborting inara search")
             return False
     except Exception as e:
         print("No results from inara for %s, aborting search. Error: %s" % ( fcid, e ))
-        traceback.print_exc()
         return False
 
 
@@ -679,13 +691,15 @@ def edsm_find_fc_system(fcid):
         return False
 
 
-def inara_fc_market_data(stationid, fcid):
+def inara_fc_market_data(fcid):
     #print("Searching inara market data for station: %s (%s)" % ( stationid, fcid ))
     try:
-        URL = "https://inara.cz/station/%s" % ( stationid )
+        URL = "https://inara.cz/station/?search=%s" % ( fcid )
         page = requests.get(URL)
         soup = BeautifulSoup(page.content, "html.parser")
-        system = soup.find("title").get_text()[21:-8]
+        results = soup.find_all("div", class_="maincontent1")
+        carrier = results[0].find("h3", class_="standardcase").find("a", href=True).text
+        system = results[0].find("span", class_="uppercase").find("a", href=True).text
         updated = soup.find("div", text="Market update").next_sibling.get_text()
         results = soup.find("div", class_="mainblock maintable")
         rows = results.find("table", class_="tablesorterintab").find("tbody").find_all("tr")
@@ -707,13 +721,14 @@ def inara_fc_market_data(stationid, fcid):
             marketdata.append(commodity)
         data = {}
         data['name'] = system
+        data['full_name'] = carrier
         data['sName'] = fcid
-        data['stationId'] = stationid
         data['market_updated'] = updated
         data['commodities'] = marketdata
         return data
     except Exception as e:
-        print("Exception getting inara data: %s" % e)
+        print("Exception getting inara data for carrier: %s" % fcid)
+        #traceback.print_exc()
         return False
 
 
@@ -732,13 +747,8 @@ def get_fccode(fcname):
 
 def get_fc_stock(fccode, source='edsm'):
     if source == 'inara':
-        inara_data = inara_find_fc_system(fccode)
-        if inara_data:
-            stn_data = inara_fc_market_data(inara_data['stationid'], fccode)
-            if not stn_data:
-                return False
-            stn_data['full_name'] = inara_data['full_name']
-        else:
+        stn_data = inara_fc_market_data(fccode)
+        if not stn_data:
             return False
     else:
         pmeters = {'marketId': FCDATA[fccode]['FCMid']}
@@ -779,10 +789,15 @@ def chunk(chunk_list, max_size=10):
 
 async def clear_history(channel, limit=20):
     msgs = []
-    async for message in channel.history(limit=limit):
-        if message.author.name == bot.user.name:
-            msgs.append(message)
-    await channel.delete_messages(msgs)
+    try:
+        async for message in channel.history(limit=limit):
+            if message.author.name == bot.user.name:
+                msgs.append(message)
+        await channel.delete_messages(msgs)
+    except:
+        # cannot delete messages older than 14 days.
+        # don't let this stop the whole process.
+        pass
 
 
 FCDATA = load_carrier_data(CARRIERS)
