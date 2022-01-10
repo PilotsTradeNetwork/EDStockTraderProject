@@ -665,6 +665,9 @@ def convert_carrier_data():
     fcfile.close()
 
     envlist[3] = envlist[3].strip('\n')
+    if ' ' not in envlist[3]:
+        print("old style carrier list not found in env file, skipping conversion.")
+        return {}
     fcids = envlist[3].split('.')
 
     envlist[4] = envlist[4].strip('\n')
