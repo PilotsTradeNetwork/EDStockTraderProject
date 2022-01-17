@@ -88,50 +88,62 @@ async def wmm_stock(message, channel):
     wmm_stock = {}
     for fcid in wmm_carriers:
         carrier_has_stock = False
-        print(f"Calling CApi for carrier {fcid}")
-        capi_response = capi(fcid)
-        stn_data = capi_response.json()
+        if 'cAPI' in FCDATA[fcid]:
+            print(f"Calling CApi for carrier {fcid}")
+            capi_response = capi(fcid)
+            stn_data = capi_response.json()
 
-        print(f"capi response: {capi_response.status_code}")
-        if capi_response.status_code != 200:
-            # TODO handle missing carriers, auth errors etc.
-            print(f"Error from CAPI for {fcid}: {capi_response.status_code} - {stn_data}")
-            if capi_response.status_code == 500:
-                # this is an internal stockbot api error, dont re-auth for this.
-                print(f"Internal stockbot API error, someone check the logs")
-                continue
-            elif capi_response.status_code == 418:
-                # capi is down for maintenance.
-                message = f"Bleep Bloop: Frontier API is down for maintenance, unable to retrieve stocks for all carriers."
-                await channel.send(message)
-                return
-            elif capi_response.status_code == 400:
-                # User needs to run the ED Launcher from Epic Games.
-                message = f'I was unable to retrieve your carrier stock levels for "{FCDATA[fcid]["FCName"]} ({fcid})" and it looks like you are using Epic Games. Please start Elite Dangerous until at least the main menu to trigger an auth-validation. You can exit the main menu directly afterwards if you want.'
-                await dm_bot_owner(fcid, FCDATA[fcid]['owner'], message)
-            elif capi_response.status_code == 401:
-                # carrier has no oauth, initiate new.
-                print(f'{fcid} has no oauth, initiating new.')
-                r = oauth_new(fcid)
-                oauth_response = r.json()
-                print(f"response {r.status_code} - {oauth_response}")
-                if 'token' in oauth_response:
-                    # TODO: dm owner of bot with oauth link
-                    oauth_url = f"{API_HOST}/generate/{fcid}?token={oauth_response['token']}"
-                    message = f'I was unable to retrieve your carrier stock levels. Please allow me access to track your carrier "{FCDATA[fcid]["FCName"]} ({fcid})" data by linking me to your Frontier account here: {oauth_url}'
+            print(f"capi response: {capi_response.status_code}")
+            if capi_response.status_code != 200:
+                # TODO handle missing carriers, auth errors etc.
+                print(f"Error from CAPI for {fcid}: {capi_response.status_code} - {stn_data}")
+                if capi_response.status_code == 500:
+                    # this is an internal stockbot api error, dont re-auth for this.
+                    print(f"Internal stockbot API error, someone check the logs")
+                    continue
+                elif capi_response.status_code == 418:
+                    # capi is down for maintenance.
+                    message = f"Bleep Bloop: Frontier API is down for maintenance, unable to retrieve stocks for all carriers."
+                    await channel.send(message)
+                    return
+                elif capi_response.status_code == 400:
+                    # User needs to run the ED Launcher from Epic Games.
+                    message = f'I was unable to retrieve your carrier stock levels for "{FCDATA[fcid]["FCName"]} ({fcid})" and it looks like you are using Epic Games. Please start Elite Dangerous until at least the main menu to trigger an auth-validation. You can exit the main menu directly afterwards if you want.'
                     await dm_bot_owner(fcid, FCDATA[fcid]['owner'], message)
-                continue
-            else:
-                # all other unknown errors.
-                print(f"Unknown error from CAPI, see above for details.")
-                continue
-
+                elif capi_response.status_code == 401:
+                    # carrier has no oauth, initiate new.
+                    print(f'{fcid} has no oauth, initiating new.')
+                    r = oauth_new(fcid)
+                    oauth_response = r.json()
+                    print(f"response {r.status_code} - {oauth_response}")
+                    if 'token' in oauth_response:
+                        # TODO: dm owner of bot with oauth link
+                        oauth_url = f"{API_HOST}/generate/{fcid}?token={oauth_response['token']}"
+                        message = f'I was unable to retrieve your carrier stock levels. Please allow me access to track your carrier "{FCDATA[fcid]["FCName"]} ({fcid})" data by linking me to your Frontier account here: {oauth_url}'
+                        await dm_bot_owner(fcid, FCDATA[fcid]['owner'], message)
+                    continue
+                else:
+                    # all other unknown errors.
+                    print(f"Unknown error from CAPI, see above for details.")
+                    continue
+            carrier_name = f"{from_hex(stn_data['name']['vanityName']).title().strip()} ({stn_data['name']['callsign']})"
+            market_updated = ''
+        else:
+            stn_data = get_fc_stock(fcid, 'inara')
+            carrier_name = stn_data['full_name']
+            stn_data['currentStarSystem'] = stn_data['name']
+            stn_data['market'] = {'commodities': stn_data['commodities']}
+            try:
+                utc_time = datetime.strptime(stn_data['market_updated'], "%d %b %Y, %I:%M%p")
+                market_updated = "(As of <t:%d:R>)" % utc_time.timestamp()
+            except:
+                market_updated = "(As of %s)" % stn_data['market_updated']
+                pass
         if 'market' not in stn_data:
             print(f"No market data for {fcid}")
             continue
 
         #market_updated = "<t:%d:R>" % datetime.now().timestamp()
-        carrier_name = f"{from_hex(stn_data['name']['vanityName']).title().strip()} ({stn_data['name']['callsign']})"
 
         com_data = stn_data['market']['commodities']
         # Indite x 11.8k - Wally (Malerba) - P.T.N. Candy Van - Price: 34,789cr - @CMDR Sofiya Khlynina
@@ -151,8 +163,8 @@ async def wmm_stock(message, channel):
                     #wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s - **%s** - Price: %s - LOW STOCK %s (As of %s)" % (
                     #    com['name'], com['stock'], FCDATA[fcid]['wmm'], stn_data['full_name'][:-10], com['buyPrice'], FCDATA[fcid]['owner'], market_updated )
                     #)
-                    wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s (%s) - **%s** - Price: %s - LOW STOCK" % (
-                        com['name'], format(com['stock'], ','), stn_data['currentStarSystem'], FCDATA[fcid]['wmm'], carrier_name, format(com['buyPrice'], ',') )
+                    wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s (%s) - **%s** - Price: %s - LOW STOCK %s" % (
+                        com['name'], format(com['stock'], ','), stn_data['currentStarSystem'], FCDATA[fcid]['wmm'], carrier_name, format(com['buyPrice'], ','), market_updated )
                     )
                     if 'notified' not in FCDATA[fcid]:
                         # catch wmm objects created before this update.
@@ -168,15 +180,15 @@ async def wmm_stock(message, channel):
                     #wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s - **%s** - Price: %s (As of %s)" % (
                     #    com['name'], com['stock'], FCDATA[fcid]['wmm'], stn_data['full_name'][:-10], com['buyPrice'], market_updated )
                     #)
-                    wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s (%s) - **%s** - Price: %s" % (
-                        com['name'], format(com['stock'], ','), stn_data['currentStarSystem'], FCDATA[fcid]['wmm'], carrier_name, format(com['buyPrice'], ',') )
+                    wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s (%s) - **%s** - Price: %s %s" % (
+                        com['name'], format(com['stock'], ','), stn_data['currentStarSystem'], FCDATA[fcid]['wmm'], carrier_name, format(com['buyPrice'], ','), market_updated )
                     )
         if not carrier_has_stock:
             #wmm_stock[FCDATA[fcid]['wmm']].append("**%s** - %s has no stock of any commodity! %s (As of %s)" % (
             #    stn_data['full_name'][:-10], FCDATA[fcid]['wmm'], FCDATA[fcid]['owner'], market_updated )
             #)
-            wmm_stock[FCDATA[fcid]['wmm']].append("**%s** - %s (%s) has no stock of any WMM commodity!" % (
-                carrier_name, stn_data['currentStarSystem'], FCDATA[fcid]['wmm'] )
+            wmm_stock[FCDATA[fcid]['wmm']].append("**%s** - %s (%s) has no stock of any WMM commodity! %s" % (
+                carrier_name, stn_data['currentStarSystem'], FCDATA[fcid]['wmm'], market_updated )
             )
 
     for system in wmm_systems:
@@ -357,7 +369,7 @@ async def APITest(ctx, mark):
 
 
 @bot.command(name='stock', help='Returns stock of a PTN carrier (carrier needs to be added first)\n'
-                                'source: Optional argument, one of "edsm" or "inara". Defaults to "edsm".')
+                                'source: Optional argument, one of "edsm", "inara" or "capi". Defaults to "edsm".')
 async def stock(ctx, fcname, source='edsm'):
     fccode = get_fccode(fcname)
     if fccode not in FCDATA:
@@ -546,8 +558,8 @@ async def addwmm(ctx, FCName, station, owner=None):
     FCDATA[fccode]['owner'] = owner
     FCDATA[fccode]['notified'] = {}
     save_carrier_data(FCDATA)
-    await ctx.send(f'Carrier {FCName} ({fccode}) has been added to WMM stock list')
-
+    await ctx.send(f'Carrier {FCName} ({fccode}) has been added to WMM stock list. Consider using ;capi_enable to fetch stocks.')
+    '''
     # do we need to send an oauth url?
     if 'authed' not in FCDATA[fccode]:
         r = oauth_new(fccode)
@@ -562,7 +574,7 @@ async def addwmm(ctx, FCName, station, owner=None):
             save_carrier_data(FCDATA)
         else:
             await ctx.send(f"Could not generate auth URL: something went horribly wrong :(")
-
+    '''
 
 @bot.command(name='stop_wmm_tracking', help='Stop tracking a Fleet Carrier(s) for the WMM stock list. \n'
                                     'FCName: name of an existing fleet carrier(s).\n'
@@ -619,7 +631,7 @@ async def wmmstatus(ctx):
     else:
         await ctx.send(f'wmm stock background task is running.')
 
-
+'''
 @bot.command(name='wmm_auth', help='Force the (re)generation of a new frontier account access url.\n'
                                     'FCName: Carrier name.')
 @commands.has_any_role('Bot Handler', 'Admin', 'Mod')
@@ -639,6 +651,47 @@ async def wmmauth(ctx, FCName):
         await ctx.send(f"wmm auth URL generated, DM sent to carrier owner.")
     else:
         await ctx.send(f"something went horribly wrong. sorry about that :(")
+'''
+
+@bot.command(name='capi_enable', help='Enable the use of Frontier cAPI for a carriers stock check.\n'
+                                'FCName: name of an existing fleet carrier.\n')
+@commands.has_any_role('Bot Handler', 'Admin', 'Mod', 'Certified Carrier')
+async def capienable(ctx, FCName):
+    fccode = get_fccode(FCName)
+    if not fccode:
+        await ctx.send('The requested carrier is not in the list! Add carriers using the add_FC command!')
+        return
+    # do we have an existing auth?
+    capi_response = capi(fccode)
+    if capi_response.status_code != 200:
+        r = oauth_new(fccode)
+        oauth_response = r.json()
+        print(f"capi_enable response {r.status_code} - {oauth_response}")
+        if 'token' in oauth_response:
+            oauth_url = f"{API_HOST}/generate/{fccode}?token={oauth_response['token']}"
+            message = f'Please allow me access to track your carrier "{FCName} ({fccode})" data by linking me to your Frontier account here: {oauth_url}'
+            await dm_bot_owner(fccode, FCDATA[fccode]['owner'], message)
+            await ctx.send(f"cAPI auth URL generated, DM sent to carrier owner.")
+            FCDATA[fccode]['cAPI'] = True
+            save_carrier_data(FCDATA)
+        else:
+            await ctx.send(f"Could not generate auth URL: something went horribly wrong :(")
+    else:
+        FCDATA[fccode]['cAPI'] = True
+        save_carrier_data(FCDATA)
+        await ctx.send(f"cAPI auth already exists for carrier, enabling stock fetching.")
+
+@bot.command(name='capi_disable', help='Disable the use of Frontier cAPI for a carriers stock check.\n'
+                                'FCName: name of an existing fleet carrier.\n')
+@commands.has_any_role('Bot Handler', 'Admin', 'Mod', 'Certified Carrier')
+async def capienable(ctx, FCName):
+    fccode = get_fccode(FCName)
+    if not fccode:
+        await ctx.send('The requested carrier is not in the list! Add carriers using the add_FC command!')
+        return
+    FCDATA[fccode].pop('cAPI', None)
+    await ctx.send(f'Carrier {FCName} ({fccode}) cAPI access has been disabled')
+    save_carrier_data(FCDATA)
 
 
 @bot.event
@@ -718,7 +771,7 @@ def inara_find_fc_system(fcid):
     URL = "https://inara.cz/station/?search=%s" % ( fcid )
     #URL = "https://inara.cz/search/?search=%s" % ( fcid )
     try:
-        page = requests.get(URL)
+        page = requests.get(URL, headers={'User-Agent': 'PTNStockBot'})
         soup = BeautifulSoup(page.content, "html.parser")
         results = soup.find_all("div", class_="maincontent1")
         carrier = results[0].find("h3", class_="standardcase").find("a", href=True)
@@ -738,7 +791,7 @@ def edsm_find_fc_system(fcid):
     #print("Searching edsm for carrier %s" % ( fcid ))
     URL = "https://www.edsm.net/en/search/stations/index/name/%s/sortBy/distanceSol/type/31" % ( fcid )
     try:
-        page = requests.get(URL)
+        page = requests.get(URL, headers={'User-Agent': 'PTNStockBot'})
         soup = BeautifulSoup(page.content, "html.parser")
         results = soup.find("table", class_="table table-hover").find("tbody").find_all("a")
         carrier = results[0].get_text()
@@ -759,7 +812,7 @@ def inara_fc_market_data(fcid):
     #print("Searching inara market data for station: %s (%s)" % ( stationid, fcid ))
     try:
         URL = "https://inara.cz/station/?search=%s" % ( fcid )
-        page = requests.get(URL)
+        page = requests.get(URL, headers={'User-Agent': 'PTNStockBot'})
         soup = BeautifulSoup(page.content, "html.parser")
         results = soup.find_all("div", class_="maincontent1")
         carrier = results[0].find("h3", class_="standardcase").find("a", href=True).text
@@ -777,14 +830,15 @@ def inara_fc_market_data(fcid):
             commodity = {
                             'id': rn,
                             'name': rn,
-                            'sellPrice': cells[1].get_text(),
-                            'buyPrice': cells[2].get_text(),
-                            'demand': cells[3].get_text().replace('-', '0'),
-                            'stock': cells[4].get_text().replace('-', '0')
+                            'sellPrice': int(cells[1].get_text().replace('-', '0').replace(',','').replace(' Cr','')),
+                            'buyPrice': int(cells[2].get_text().replace('-', '0').replace(',','').replace(' Cr','')),
+                            'demand': int(cells[3].get_text().replace('-', '0').replace(',','')),
+                            'stock': int(cells[4].get_text().replace('-', '0').replace(',',''))
                         }
             marketdata.append(commodity)
         data = {}
         data['name'] = system
+        data['currentStarSystem'] = system
         data['full_name'] = carrier
         data['sName'] = fcid
         data['market_updated'] = updated
@@ -793,6 +847,26 @@ def inara_fc_market_data(fcid):
     except Exception as e:
         print("Exception getting inara data for carrier: %s" % fcid)
         return False
+
+
+def capi_fc_market_data(fcid):
+    # get stocks from capi and format as inara data.
+    capi_response = capi(fcid)
+    if capi_response.status_code != 200:
+        print(f"Error from CAPI for {fcid}: {capi_response.status_code}")
+        return False
+    stn_data = capi_response.json()
+    if 'market' not in stn_data:
+        print(f"No market data for {fcid}")
+        return False
+    stn_data['name'] = stn_data['currentStarSystem']
+    stn_data['sName'] = fcid
+    stn_data['market_updated'] = 'cAPI'
+    if 'commodities' in stn_data['market']:
+        # remove commodity from list if it has name 'Drones'.
+        # this is a bug in the CAPI data.
+        stn_data['commodities'] = [c for c in stn_data['market']['commodities'] if c['name'] != 'Drones']
+    return stn_data
 
 
 def get_fccode(fcname):
@@ -811,6 +885,10 @@ def get_fccode(fcname):
 def get_fc_stock(fccode, source='edsm'):
     if source == 'inara':
         stn_data = inara_fc_market_data(fccode)
+        if not stn_data:
+            return False
+    elif source == 'capi':
+        stn_data = capi_fc_market_data(fccode)
         if not stn_data:
             return False
     else:
