@@ -228,6 +228,7 @@ async def wmm_stock(message, channel):
     footer = []
     footer.append(':')
     footer.append("-\nCarrier stocks last checked %s" % ( wmm_updated ))
+    footer.append("Carriers with (As of ...) are fetched from EDMC, ensure it is running to update stock levels!")
     await channel.send('\n'.join(footer))
 
     # the following code allows us to change sleep time dynamically
