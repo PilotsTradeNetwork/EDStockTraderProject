@@ -130,6 +130,9 @@ async def wmm_stock(message, channel):
             market_updated = ''
         else:
             stn_data = get_fc_stock(fcid, 'inara')
+            if not stn_data:
+                print(f"no inara market data for {fcid}")
+                continue
             carrier_name = stn_data['full_name']
             stn_data['currentStarSystem'] = stn_data['name']
             stn_data['market'] = {'commodities': stn_data['commodities']}
@@ -684,7 +687,7 @@ async def capienable(ctx, FCName):
 @bot.command(name='capi_disable', help='Disable the use of Frontier cAPI for a carriers stock check.\n'
                                 'FCName: name of an existing fleet carrier.\n')
 @commands.has_any_role('Bot Handler', 'Admin', 'Mod', 'Certified Carrier')
-async def capienable(ctx, FCName):
+async def capidisable(ctx, FCName):
     fccode = get_fccode(FCName)
     if not fccode:
         await ctx.send('The requested carrier is not in the list! Add carriers using the add_FC command!')
@@ -865,7 +868,8 @@ def capi_fc_market_data(fcid):
     if 'commodities' in stn_data['market']:
         # remove commodity from list if it has name 'Drones'.
         # this is a bug in the CAPI data.
-        stn_data['commodities'] = [c for c in stn_data['market']['commodities'] if c['name'] != 'Drones']
+        # then sort by name alphabetically.
+        stn_data['commodities'] = sorted([c for c in stn_data['market']['commodities'] if c['name'] != 'Drones'], key=lambda d: d['name'])
     return stn_data
 
 
