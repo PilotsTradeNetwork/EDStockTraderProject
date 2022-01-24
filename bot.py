@@ -278,11 +278,12 @@ async def dingle(ctx):
 @bot.command(name='add_FC', help='Add a fleet carrier for stock tracking.\n'
                                  'FCCode: Carrier ID Code \n'
                                  'FCSys: Carrier current system, use "auto", "auto-edsm", or "auto-inara" to search. ("auto" uses edsm)\n'
-                                 'FCName: The alias with which you want to refer to the carrier. Please use something '
-                                 'simple like "orion" or "9oclock", as this is what you use to call the stock command!'
+                                 'FCName: The alias with which you want to refer to the carrier. Please use something\n'
+                                 '        simple like "orion" or "9oclock", as this is what you use to call the stock command!\n'
+                                 'Owner: The discord owner ID or @mention to DM on empty WMM and capi authentication.\n'
                                  '\n!!SYSTEMS WITH SPACES IN THE NAMES NEED TO BE "QUOTED LIKE THIS"!! ')
 @commands.has_any_role('Bot Handler', 'Admin', 'Mod')
-async def addFC(ctx, FCCode, FCSys, FCName):
+async def addFC(ctx, FCCode, FCSys, FCName, owner):
     # Checking if FC is already in the list, and if FC name is in correct format
     # Stops if FC is already in list, or if incorrect name format
     matched = re.match("[a-zA-Z0-9][a-zA-Z0-9][a-zA-Z0-9]-[a-zA-Z0-9][a-zA-Z0-9][a-zA-Z0-9]", FCCode)
@@ -330,7 +331,12 @@ async def addFC(ctx, FCCode, FCSys, FCName):
     print(mid['marketId'])
     midstr = str(mid['marketId'])
 
-    FCDATA[FCCode.upper()] = {'FCName': FCName.lower(), 'FCMid': midstr, 'FCSys': FCSys.lower()}
+    FCDATA[FCCode.upper()] = {
+        'FCName': FCName.lower(),
+        'FCMid': midstr,
+        'FCSys': FCSys.lower(),
+        'owner': owner,
+    }
     save_carrier_data(FCDATA)
 
     await ctx.send(f'Added {FCCode} to the FC list, under reference name {FCName}')
@@ -461,10 +467,17 @@ async def fclist(ctx, Filter=None):
     for fc_code, fc_data in FCDATA.items():
         if Filter and 'wmm' not in fc_data:
             continue
-        if 'wmm' in fc_data:
-            names.append("%s (%s) - WMM" % ( fc_data['FCName'], fc_code))
+        if 'owner' in fc_data:
+            if isinstance(fc_data['owner'], int):
+                owner = "<@!%s>" % fc_data['owner']
+            else:
+                owner = fc_data['owner']
         else:
-            names.append("%s (%s)" % ( fc_data['FCName'], fc_code))
+            owner = 'Unknown'
+        if 'wmm' in fc_data:
+            names.append("%s (%s) Owner: %s - WMM Active" % ( fc_data['FCName'], fc_code, owner ))
+        else:
+            names.append("%s (%s) Owner: %s" % ( fc_data['FCName'], fc_code, owner ))
     if not names:
         names = ['No Fleet Carriers are being tracked, add one!']
     print('Listing active carriers')
@@ -545,20 +558,14 @@ async def fclist(ctx, Filter=None):
 @bot.command(name='start_wmm_tracking', help='Start tracking a FC for the WMM stock list. \n'
                                     'FCName: name of an existing fleet carrier\n'
                                     'Station: name of the closest station to the carrier. For display purposes only\n'
-                                    'Owner: (optional) the discord owner ID or @mention to notify on empty stock. If not specified, takes the ID of the user typing the command.\n'
                                     '!! STATIONS WITH SPACES IN THE NAMES NEED TO BE "QUOTED LIKE THIS" !!\n')
 @commands.has_any_role('Bot Handler', 'Admin', 'Mod', 'Certified Carrier')
-async def addwmm(ctx, FCName, station, owner=None):
+async def addwmm(ctx, FCName, station):
     fccode = get_fccode(FCName)
     if not fccode:
         await ctx.send('The requested carrier is not in the list! Add carriers using the add_FC command!')
         return
-
-    if not owner:
-        owner = ctx.author.id
-
     FCDATA[fccode]['wmm'] = "%s" % station.title()
-    FCDATA[fccode]['owner'] = owner
     FCDATA[fccode]['notified'] = {}
     save_carrier_data(FCDATA)
     await ctx.send(f'Carrier {FCName} ({fccode}) has been added to WMM stock list. Consider using ;capi_enable to fetch stocks.')
@@ -592,7 +599,6 @@ async def delwmm(ctx, FCName):
             continue
 
         FCDATA[fccode].pop('wmm', None)
-        FCDATA[fccode].pop('owner', None)
         FCDATA[fccode].pop('notified', None)
         await ctx.send(f'Carrier {carrier} ({fccode}) has been removed from the WMM stock list')
     save_carrier_data(FCDATA)
