@@ -108,7 +108,7 @@ async def wmm_stock(message, channel):
                     return
                 elif capi_response.status_code == 400:
                     # User needs to run the ED Launcher from Epic Games.
-                    message = f'I was unable to retrieve your carrier stock levels for "{FCDATA[fcid]["FCName"]} ({fcid})" and it looks like you are using Epic Games. Please start Elite Dangerous until at least the main menu to trigger an auth-validation. You can exit the main menu directly afterwards if you want.'
+                    message = f'I was unable to retrieve your carrier stock levels for "{FCDATA[fcid]["FCName"]} ({fcid})", please re-authenticate using the ;capi_enable command.'
                     await dm_bot_owner(fcid, FCDATA[fcid]['owner'], message)
                 elif capi_response.status_code == 401:
                     # carrier has no oauth, initiate new.
@@ -228,7 +228,8 @@ async def wmm_stock(message, channel):
     footer = []
     footer.append(':')
     footer.append("-\nCarrier stocks last checked %s" % ( wmm_updated ))
-    footer.append("Carriers with (As of ...) are fetched from EDMC, ensure it is running to update stock levels!")
+    footer.append("Carriers with no timestamp are fetched from cAPI and are accurate to within an hour.")
+    footer.append("Carriers with (As of ...) are fetched from Inara. Ensure EDMC is running to update stock levels!")
     await channel.send('\n'.join(footer))
 
     # the following code allows us to change sleep time dynamically
@@ -302,6 +303,17 @@ async def addFC(ctx, FCCode, FCSys, FCName, owner):
             await ctx.send(f'{FCName} is an alias that is already in the alias list belonging to carrier {fc_code}!')
             return
 
+    # verify owner ID is valid using server.get_member()
+    try:
+        owner_id = "".join(re.findall(r'\d+',str(owner)))
+        owner_member = ctx.guild.get_member(int(owner_id))
+        if owner_member is None:
+            await ctx.send(f'"{owner}" is not a valid discord user!')
+            return
+    except:
+        await ctx.send(f'"{owner}" is not a valid discord user!!')
+        return
+
     print(f'Format is good... Checking database...')
 
     search_data = None
@@ -336,7 +348,7 @@ async def addFC(ctx, FCCode, FCSys, FCName, owner):
         'FCName': FCName.lower(),
         'FCMid': midstr,
         'FCSys': FCSys.lower(),
-        'owner': owner,
+        'owner': owner_member.id,
     }
     save_carrier_data(FCDATA)
 
@@ -468,17 +480,20 @@ async def fclist(ctx, Filter=None):
     for fc_code, fc_data in FCDATA.items():
         if Filter and 'wmm' not in fc_data:
             continue
+        owner = 'Unknown'
         if 'owner' in fc_data:
             if isinstance(fc_data['owner'], int):
                 owner = "<@!%s>" % fc_data['owner']
             else:
                 owner = fc_data['owner']
-        else:
-            owner = 'Unknown'
+        cAPI = 'Disabled'
+        if 'cAPI' in fc_data:
+            if fc_data['cAPI'] == True:
+                cAPI = 'Enabled'
         if 'wmm' in fc_data:
-            names.append("%s (%s) Owner: %s - WMM Active" % ( fc_data['FCName'], fc_code, owner ))
+            names.append("%s (%s) Owner: %s - cAPI: %s - WMM Active" % ( fc_data['FCName'], fc_code, owner, cAPI ))
         else:
-            names.append("%s (%s) Owner: %s" % ( fc_data['FCName'], fc_code, owner ))
+            names.append("%s (%s) Owner: %s - cAPI: %s" % ( fc_data['FCName'], fc_code, owner, cAPI ))
     if not names:
         names = ['No Fleet Carriers are being tracked, add one!']
     print('Listing active carriers')
@@ -569,7 +584,11 @@ async def addwmm(ctx, FCName, station):
     FCDATA[fccode]['wmm'] = "%s" % station.title()
     FCDATA[fccode]['notified'] = {}
     save_carrier_data(FCDATA)
-    await ctx.send(f'Carrier {FCName} ({fccode}) has been added to WMM stock list. Consider using ;capi_enable to fetch stocks.')
+    msg = f'Carrier {FCName} ({fccode}) has been added to WMM stock list. Consider using ;capi_enable to fetch stocks if this is a non-Epic Games carrier.'
+    if 'cAPI' in FCDATA[fccode]:
+        if FCDATA[fccode]['cAPI'] == True:
+            msg = f'Carrier {FCName} ({fccode}) has been added to WMM stock list. cAPI is already enabled.'
+    await ctx.send(msg)
     '''
     # do we need to send an oauth url?
     if 'authed' not in FCDATA[fccode]:
