@@ -103,8 +103,10 @@ async def wmm_stock(message, channel):
                     continue
                 elif capi_response.status_code == 418:
                     # capi is down for maintenance.
-                    message = f"Bleep Bloop: Frontier API is down for maintenance, unable to retrieve stocks for all carriers."
+                    await clear_history(channel)
+                    message = f"Bleep Bloop: Frontier API is down for maintenance, unable to retrieve stocks for all carriers. Retrying in 60 seconds."
                     await channel.send(message)
+                    await asyncio.sleep(60)
                     return
                 elif capi_response.status_code == 400:
                     # User needs to run the ED Launcher from Epic Games.
