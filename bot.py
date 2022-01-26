@@ -591,22 +591,7 @@ async def addwmm(ctx, FCName, station):
         if FCDATA[fccode]['cAPI'] == True:
             msg = f'Carrier {FCName} ({fccode}) has been added to WMM stock list. cAPI is already enabled.'
     await ctx.send(msg)
-    '''
-    # do we need to send an oauth url?
-    if 'authed' not in FCDATA[fccode]:
-        r = oauth_new(fccode)
-        oauth_response = r.json()
-        print(f"wmm_auth response {r.status_code} - {oauth_response}")
-        if 'token' in oauth_response:
-            oauth_url = f"{API_HOST}/generate/{fccode}?token={oauth_response['token']}"
-            message = f'Please allow me access to track your carrier "{FCName} ({fccode})" data by linking me to your Frontier account here: {oauth_url}'
-            await dm_bot_owner(fccode, FCDATA[fccode]['owner'], message)
-            await ctx.send(f"wmm auth URL generated, DM sent to carrier owner.")
-            FCDATA[fccode]['authed'] = True
-            save_carrier_data(FCDATA)
-        else:
-            await ctx.send(f"Could not generate auth URL: something went horribly wrong :(")
-    '''
+
 
 @bot.command(name='stop_wmm_tracking', help='Stop tracking a Fleet Carrier(s) for the WMM stock list. \n'
                                     'FCName: name of an existing fleet carrier(s).\n'
@@ -662,27 +647,6 @@ async def wmmstatus(ctx):
     else:
         await ctx.send(f'wmm stock background task is running.')
 
-'''
-@bot.command(name='wmm_auth', help='Force the (re)generation of a new frontier account access url.\n'
-                                    'FCName: Carrier name.')
-@commands.has_any_role('Bot Handler', 'Admin', 'Mod')
-async def wmmauth(ctx, FCName):
-    FCCode = get_fccode(FCName)
-    if not FCCode:
-        await ctx.send('The requested carrier is not in the list! Add carriers using the add_FC command!')
-        return
-
-    r = oauth_new(FCCode, True)
-    oauth_response = r.json()
-    print(f"wmm_auth response {r.status_code} - {oauth_response}")
-    if 'token' in oauth_response:
-        oauth_url = f"{API_HOST}/generate/{FCCode}?token={oauth_response['token']}"
-        message = f'Please allow me access to track your carrier "{FCName} ({FCCode})" data by linking me to your Frontier account here: {oauth_url}'
-        await dm_bot_owner(FCCode, FCDATA[FCCode]['owner'], message)
-        await ctx.send(f"wmm auth URL generated, DM sent to carrier owner.")
-    else:
-        await ctx.send(f"something went horribly wrong. sorry about that :(")
-'''
 
 @bot.command(name='capi_enable', help='Enable the use of Frontier cAPI for a carriers stock check.\n'
                                 'FCName: name of an existing fleet carrier.\n')
@@ -711,6 +675,7 @@ async def capienable(ctx, FCName):
         FCDATA[fccode]['cAPI'] = True
         save_carrier_data(FCDATA)
         await ctx.send(f"cAPI auth already exists for carrier, enabling stock fetching.")
+
 
 @bot.command(name='capi_disable', help='Disable the use of Frontier cAPI for a carriers stock check.\n'
                                 'FCName: name of an existing fleet carrier.\n')
