@@ -108,29 +108,22 @@ async def wmm_stock(message, channel):
                     await channel.send(message)
                     await asyncio.sleep(60)
                     return
-                elif capi_response.status_code == 400:
-                    # User needs to run the ED Launcher from Epic Games.
-                    message = f'I was unable to retrieve your carrier stock levels for "{FCDATA[fcid]["FCName"]} ({fcid})", please re-authenticate using the ;capi_enable command.'
+                elif capi_response.status_code == 400 or capi_response.status_code == 401:
+                    # User needs to re-auth. (400 = EGS, 401 = Expired Token)
+                    FCDATA[fcid].pop('cAPI', None)
+                    save_carrier_data(FCDATA)
+                    message = (f'I was unable to retrieve your carrier stock levels for "{FCDATA[fcid]["FCName"]} ({fcid})" from the cAPI, please re-authenticate '
+                                f'using the `;capi_enable {FCDATA[fcid]["FCName"]}` command. Stocks will be fetched from Inara until this has been completed.')
                     await dm_bot_owner(fcid, FCDATA[fcid]['owner'], message)
-                elif capi_response.status_code == 401:
-                    # carrier has no oauth, initiate new.
-                    print(f'{fcid} has no oauth, initiating new.')
-                    r = oauth_new(fcid)
-                    oauth_response = r.json()
-                    print(f"response {r.status_code} - {oauth_response}")
-                    if 'token' in oauth_response:
-                        # TODO: dm owner of bot with oauth link
-                        oauth_url = f"{API_HOST}/generate/{fcid}?token={oauth_response['token']}"
-                        message = f'I was unable to retrieve your carrier stock levels. Please allow me access to track your carrier "{FCDATA[fcid]["FCName"]} ({fcid})" data by linking me to your Frontier account here: {oauth_url}'
-                        await dm_bot_owner(fcid, FCDATA[fcid]['owner'], message)
-                    continue
                 else:
                     # all other unknown errors.
                     print(f"Unknown error from CAPI, see above for details.")
                     continue
             carrier_name = f"{from_hex(stn_data['name']['vanityName']).title().strip()} ({stn_data['name']['callsign']})"
             market_updated = ''
-        else:
+
+        # this catches the case where we remove the cAPI flag above if auth fails.
+        if 'cAPI' not in FCDATA[fcid]:
             stn_data = get_fc_stock(fcid, 'inara')
             if not stn_data:
                 print(f"no inara market data for {fcid}")
@@ -649,44 +642,49 @@ async def wmmstatus(ctx):
 
 
 @bot.command(name='capi_enable', help='Enable the use of Frontier cAPI for a carriers stock check.\n'
-                                'FCName: name of an existing fleet carrier.\n')
+                                'FCName: name of an existing fleet carrier(s).\n'
+                                'Multiple carriers can be specified using comma seperation. \n')
 @commands.has_any_role('Bot Handler', 'Admin', 'Mod', 'Certified Carrier')
 async def capienable(ctx, FCName):
-    fccode = get_fccode(FCName)
-    if not fccode:
-        await ctx.send('The requested carrier is not in the list! Add carriers using the add_FC command!')
-        return
-    # do we have an existing auth?
-    capi_response = capi(fccode)
-    if capi_response.status_code != 200:
-        r = oauth_new(fccode)
-        oauth_response = r.json()
-        print(f"capi_enable response {r.status_code} - {oauth_response}")
-        if 'token' in oauth_response:
-            oauth_url = f"{API_HOST}/generate/{fccode}?token={oauth_response['token']}"
-            message = f'Please allow me access to track your carrier "{FCName} ({fccode})" data by linking me to your Frontier account here: {oauth_url}'
-            await dm_bot_owner(fccode, FCDATA[fccode]['owner'], message)
-            await ctx.send(f"cAPI auth URL generated, DM sent to carrier owner.")
-            FCDATA[fccode]['cAPI'] = True
-            save_carrier_data(FCDATA)
+    carriers = FCName.split(',')
+    for carrier in carriers:
+        fccode = get_fccode(carrier)
+        if not fccode:
+            await ctx.send('The requested carrier %s is not in the list! Add carriers using the add_FC command!' % carrier)
+            continue
+        # do we have an existing auth?
+        capi_response = capi(fccode)
+        if capi_response.status_code != 200:
+            r = oauth_new(fccode)
+            oauth_response = r.json()
+            print(f"capi_enable response {r.status_code} - {oauth_response}")
+            if 'token' in oauth_response:
+                oauth_url = f"{API_HOST}/generate/{fccode}?token={oauth_response['token']}"
+                message = f'Please allow me access to track your carrier "{carrier} ({fccode})" data by linking me to your Frontier account here: {oauth_url}'
+                await dm_bot_owner(fccode, FCDATA[fccode]['owner'], message)
+                await ctx.send(f"cAPI auth URL generated, DM sent to carrier owner.")
+                FCDATA[fccode]['cAPI'] = True
+            else:
+                await ctx.send("Could not generate auth URL for carrier %s: something went horribly wrong :(" % carrier)
         else:
-            await ctx.send(f"Could not generate auth URL: something went horribly wrong :(")
-    else:
-        FCDATA[fccode]['cAPI'] = True
-        save_carrier_data(FCDATA)
-        await ctx.send(f"cAPI auth already exists for carrier, enabling stock fetching.")
+            FCDATA[fccode]['cAPI'] = True
+            await ctx.send(f"cAPI auth already exists for carrier, enabling stock fetching.")
+    save_carrier_data(FCDATA)
 
 
 @bot.command(name='capi_disable', help='Disable the use of Frontier cAPI for a carriers stock check.\n'
-                                'FCName: name of an existing fleet carrier.\n')
+                                'FCName: name of an existing fleet carrier(s).\n'
+                                'Multiple carriers can be specified using comma seperation. \n')
 @commands.has_any_role('Bot Handler', 'Admin', 'Mod', 'Certified Carrier')
 async def capidisable(ctx, FCName):
-    fccode = get_fccode(FCName)
-    if not fccode:
-        await ctx.send('The requested carrier is not in the list! Add carriers using the add_FC command!')
-        return
-    FCDATA[fccode].pop('cAPI', None)
-    await ctx.send(f'Carrier {FCName} ({fccode}) cAPI access has been disabled')
+    carriers = FCName.split(',')
+    for carrier in carriers:
+        fccode = get_fccode(carrier)
+        if not fccode:
+            await ctx.send('The requested carrier %s is not in the list! Add carriers using the add_FC command!' % carrier)
+            continue
+        FCDATA[fccode].pop('cAPI', None)
+        await ctx.send(f'Carrier {carrier} ({fccode}) cAPI access has been disabled')
     save_carrier_data(FCDATA)
 
 
