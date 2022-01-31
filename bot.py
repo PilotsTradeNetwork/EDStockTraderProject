@@ -386,8 +386,8 @@ async def APITest(ctx, mark):
 
 
 @bot.command(name='stock', help='Returns stock of a PTN carrier (carrier needs to be added first)\n'
-                                'source: Optional argument, one of "edsm", "inara" or "capi". Defaults to "edsm".')
-async def stock(ctx, fcname, source='edsm'):
+                                'Source: Optional argument, one of "edsm", "inara" or "capi". Defaults to capi -> inara fallback.')
+async def stock(ctx, fcname, source='auto'):
     fccode = get_fccode(fcname)
     if fccode not in FCDATA:
         await ctx.send('The requested carrier is not in the list! Add carriers using the add_FC command!')
@@ -395,7 +395,16 @@ async def stock(ctx, fcname, source='edsm'):
 
     await ctx.send(f'Fetching stock levels for **{fcname} ({fccode})**')
 
-    stn_data = get_fc_stock(fccode, source)
+    if source == 'auto':
+        if 'cAPI' in FCDATA[fccode]:
+            stn_data = get_fc_stock(fccode, 'capi')
+            source = 'capi'
+        else:
+            stn_data = get_fc_stock(fccode, 'inara')
+            source = 'inara'
+    else:
+        stn_data = get_fc_stock(fccode, source)
+
     if stn_data is False:
         await ctx.send(f"{fcname} has no current market data.")
         return
@@ -423,7 +432,9 @@ async def stock(ctx, fcname, source='edsm'):
     embed = discord.Embed()
     embed.add_field(name = f"{fcname} ({stn_data['sName']}) stock", value = msg, inline = False)
     embed.add_field(name = 'FC Location', value = loc_data, inline = False)
-    embed.set_footer(text = f"Data last updated: {stn_data['market_updated']}\nNumbers out of wack? Ensure EDMC is running!")
+    embed.set_footer(text = f"Data last updated: {stn_data['market_updated']}\n"
+                            f"Data Source: {source}\n"
+                            f"Numbers out of wack? Ensure EDMC is running!")
     #print('Embed created!')
     await ctx.send(embed=embed)
     #print('Embed sent!')
@@ -685,6 +696,32 @@ async def capidisable(ctx, FCName):
             continue
         FCDATA[fccode].pop('cAPI', None)
         await ctx.send(f'Carrier {carrier} ({fccode}) cAPI access has been disabled')
+    save_carrier_data(FCDATA)
+
+
+@bot.command(name='set_owner', help='Set the owner of a fleet carrier.\n'
+                                'FCName: name of an existing fleet carrier.\n'
+                                'Owner: discord user id or @mention of the owner.')
+@commands.has_any_role('Bot Handler', 'Admin', 'Mod')
+async def setowner(ctx, FCName, owner):
+    fccode = get_fccode(FCName)
+    if not fccode:
+        await ctx.send('The requested carrier %s is not in the list! Add carriers using the add_FC command!' % FCName)
+        return
+
+    # verify owner ID is valid using server.get_member()
+    try:
+        owner_id = "".join(re.findall(r'\d+',str(owner)))
+        owner_member = ctx.guild.get_member(int(owner_id))
+        if owner_member is None:
+            await ctx.send(f'"{owner}" is not a valid discord user!')
+            return
+    except:
+        await ctx.send(f'"{owner}" is not a valid discord user!!')
+        return
+
+    FCDATA[fccode]['owner'] = owner_member.id
+    await ctx.send(f'Carrier {FCName} ({fccode}) owner set to {owner_member.mention}')
     save_carrier_data(FCDATA)
 
 
