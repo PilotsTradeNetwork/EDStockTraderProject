@@ -119,8 +119,9 @@ async def wmm_stock(message, channel):
                     # all other unknown errors.
                     print(f"Unknown error from CAPI, see above for details.")
                     continue
-            carrier_name = f"{from_hex(stn_data['name']['vanityName']).title().strip()} ({stn_data['name']['callsign']})"
-            market_updated = ''
+            else:
+                carrier_name = f"{from_hex(stn_data['name']['vanityName']).title().strip()} ({stn_data['name']['callsign']})"
+                market_updated = ''
 
         # this catches the case where we remove the cAPI flag above if auth fails.
         if 'cAPI' not in FCDATA[fcid]:
