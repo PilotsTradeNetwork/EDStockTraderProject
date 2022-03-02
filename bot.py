@@ -266,22 +266,25 @@ async def wmm_stock_error(error):
 @bot.command(name='ping', help='If the bot hasnt crashed, it will respond >pong<')
 async def dingle(ctx):
     await ctx.send('pong!')
+    '''
+    # Disable EDSM as a stock source.
+    # Code to be removed at a later stage.
     r = requests.get('https://www.edsm.net/api-system-v1/stations/market')
     if r:
         await ctx.send('EDSM pongs as well! Everything should work great :)')
     else:
         await ctx.send('EDSM does not pong! Stock tracking will not function :(')
+    '''
 
 
 @bot.command(name='add_FC', help='Add a fleet carrier for stock tracking.\n'
                                  'FCCode: Carrier ID Code \n'
-                                 'FCSys: Carrier current system, use "auto", "auto-edsm", or "auto-inara" to search. ("auto" uses edsm)\n'
                                  'FCName: The alias with which you want to refer to the carrier. Please use something\n'
                                  '        simple like "orion" or "9oclock", as this is what you use to call the stock command!\n'
                                  'Owner: The discord owner ID or @mention to DM on empty WMM and capi authentication.\n'
                                  '\n!!SYSTEMS WITH SPACES IN THE NAMES NEED TO BE "QUOTED LIKE THIS"!! ')
 @commands.has_any_role('Bot Handler', 'Admin', 'Mod')
-async def addFC(ctx, FCCode, FCSys, FCName, owner):
+async def addFC(ctx, FCCode, FCName, owner):
     # Checking if FC is already in the list, and if FC name is in correct format
     # Stops if FC is already in list, or if incorrect name format
     matched = re.match("[a-zA-Z0-9][a-zA-Z0-9][a-zA-Z0-9]-[a-zA-Z0-9][a-zA-Z0-9][a-zA-Z0-9]", FCCode)
@@ -312,6 +315,9 @@ async def addFC(ctx, FCCode, FCSys, FCName, owner):
 
     print(f'Format is good... Checking database...')
 
+    '''
+    # Disable EDSM as a stock source.
+    # Code to be removed at a later stage.
     search_data = None
     if FCSys == 'auto-inara':
         search_data = inara_find_fc_system(FCCode)
@@ -339,18 +345,21 @@ async def addFC(ctx, FCCode, FCSys, FCName, owner):
 
     print(mid['marketId'])
     midstr = str(mid['marketId'])
+    '''
 
     FCDATA[FCCode.upper()] = {
         'FCName': FCName.lower(),
-        'FCMid': midstr,
-        'FCSys': FCSys.lower(),
+        #'FCMid': midstr, # EDSM Data, removed.
+        #'FCSys': FCSys.lower(), # EDSM Data, removed.
         'owner': owner_member.id,
     }
     save_carrier_data(FCDATA)
 
     await ctx.send(f'Added {FCCode} to the FC list, under reference name {FCName}')
 
-
+'''
+# Disable EDSM as a stock source.
+# Code to be removed at a later stage.
 @bot.command(name='APItest', help='Test EDSM API')
 @commands.has_role('Bot Handler')
 async def APITest(ctx, mark):
@@ -384,11 +393,12 @@ async def APITest(ctx, mark):
 
     await ctx.send(embed=embed)
     print('Embed sent!')
-
+'''
 
 @bot.command(name='stock', help='Returns stock of a PTN carrier (carrier needs to be added first)\n'
-                                'Source: Optional argument, one of "edsm", "inara" or "capi". Defaults to capi -> inara fallback.')
+                                'Source: Optional argument, one of "inara" or "capi". Defaults to capi -> inara fallback.')
 async def stock(ctx, fcname, source='auto'):
+    source = source.lower()
     fccode = get_fccode(fcname)
     if fccode not in FCDATA:
         await ctx.send('The requested carrier is not in the list! Add carriers using the add_FC command!')
@@ -404,6 +414,9 @@ async def stock(ctx, fcname, source='auto'):
             stn_data = get_fc_stock(fccode, 'inara')
             source = 'inara'
     else:
+        if source not in ['capi', 'inara']:
+            await ctx.send('Invalid source! Please use "capi" or "inara"')
+            return
         stn_data = get_fc_stock(fccode, source)
 
     if stn_data is False:
@@ -780,6 +793,12 @@ def load_carrier_data(CARRIERS):
     print(f'Loading Carrier Data.')
     try:
         FCDATA = json.loads(CARRIERS)
+        # remove EDSM data from carrier data
+        print(f'Removing EDSM data from carrier data.')
+        for carrier in FCDATA:
+            FCDATA[carrier].pop('FCSys', None)
+            FCDATA[carrier].pop('FCMid', None)
+        save_carrier_data(FCDATA)
     except:
         FCDATA = convert_carrier_data()
     return FCDATA
@@ -818,7 +837,9 @@ def inara_find_fc_system(fcid):
         print("No results from inara for %s, aborting search. Error: %s" % ( fcid, e ))
         return False
 
-
+'''
+# Disable EDSM as a stock source.
+# Code to be removed at a later stage.
 def edsm_find_fc_system(fcid):
     #print("Searching edsm for carrier %s" % ( fcid ))
     URL = "https://www.edsm.net/en/search/stations/index/name/%s/sortBy/distanceSol/type/31" % ( fcid )
@@ -838,7 +859,7 @@ def edsm_find_fc_system(fcid):
     except:
         print("No results from edsm for %s, aborting search." % fcid)
         return False
-
+'''
 
 def inara_fc_market_data(fcid):
     #print("Searching inara market data for station: %s (%s)" % ( stationid, fcid ))
@@ -915,7 +936,7 @@ def get_fccode(fcname):
     return fccode
 
 
-def get_fc_stock(fccode, source='edsm'):
+def get_fc_stock(fccode, source='inara'):
     if source == 'inara':
         stn_data = inara_fc_market_data(fccode)
         if not stn_data:
@@ -924,6 +945,9 @@ def get_fc_stock(fccode, source='edsm'):
         stn_data = capi_fc_market_data(fccode)
         if not stn_data:
             return False
+    '''
+    # Disable EDSM as a stock source.
+    # Code to be removed at a later stage.
     else:
         pmeters = {'marketId': FCDATA[fccode]['FCMid']}
         r = requests.get('https://www.edsm.net/api-system-v1/stations/market',params=pmeters)
@@ -935,6 +959,7 @@ def get_fc_stock(fccode, source='edsm'):
         else:
             stn_data['market_updated'] = "Unknown"
         stn_data['full_name'] = False
+    '''
     return stn_data
 
 
