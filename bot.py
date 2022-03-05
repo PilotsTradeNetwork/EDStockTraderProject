@@ -281,8 +281,7 @@ async def dingle(ctx):
                                  'FCCode: Carrier ID Code \n'
                                  'FCName: The alias with which you want to refer to the carrier. Please use something\n'
                                  '        simple like "orion" or "9oclock", as this is what you use to call the stock command!\n'
-                                 'Owner: The discord owner ID or @mention to DM on empty WMM and capi authentication.\n'
-                                 '\n!!SYSTEMS WITH SPACES IN THE NAMES NEED TO BE "QUOTED LIKE THIS"!! ')
+                                 'Owner: The discord owner ID or @mention to DM on empty WMM and capi authentication.')
 @commands.has_any_role('Bot Handler', 'Admin', 'Mod')
 async def addFC(ctx, FCCode, FCName, owner):
     # Checking if FC is already in the list, and if FC name is in correct format
