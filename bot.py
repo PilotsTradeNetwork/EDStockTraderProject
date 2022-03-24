@@ -746,13 +746,25 @@ async def on_error(event, *args, **kwargs):
 
 @bot.event
 async def on_command_error(ctx, error):
+    command = ctx.invoked_with
     if ENV == 'dev':
         from pprint import pprint
         print('== Start Command Error ==')
+        pprint(command)
         pprint(error)
         print('== End Command Error ==')
     if isinstance(error, commands.errors.CheckFailure):
-        await ctx.send('You do not have the correct role for this command.')
+        message = "You do not have the correct role for this command."
+    elif isinstance(error, commands.MissingPermissions):
+        message = "You are missing the required permissions to run this command!"
+    elif isinstance(error, commands.MissingRequiredArgument):
+        message = f"Missing a required argument: '{error.param}'. See `;help {command}` for more info."
+    elif isinstance(error, commands.ConversionError):
+        message = str(error)
+    else:
+        message = "Oh no! Something went wrong while running the command!"
+    await ctx.send(message)
+
 
 def convert_carrier_data():
     print(f'Attempting to convert old style carrier list, searching for data:')
