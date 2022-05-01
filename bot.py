@@ -398,12 +398,13 @@ async def APITest(ctx, mark):
                                 'Source: Optional argument, one of "inara" or "capi". Defaults to capi -> inara fallback.')
 async def stock(ctx, fcname, source='auto'):
     source = source.lower()
-    fccode = get_fccode(fcname)
+    # check if fcname is an fccode, otherwise look it up using get_fccode()
+    fccode = fcname.upper() if fcname.upper() in FCDATA.keys() else get_fccode(fcname)
     if fccode not in FCDATA:
         await ctx.send('The requested carrier is not in the list! Add carriers using the add_FC command!')
         return
 
-    await ctx.send(f'Fetching stock levels for **{fcname} ({fccode})**')
+    await ctx.send(f"Fetching stock levels for **{FCDATA[fccode]['FCName']} ({fccode})**")
 
     if source == 'auto':
         if 'cAPI' in FCDATA[fccode]:
@@ -419,13 +420,13 @@ async def stock(ctx, fcname, source='auto'):
         stn_data = get_fc_stock(fccode, source)
 
     if stn_data is False:
-        await ctx.send(f"{fcname} has no current market data.")
+        await ctx.send(f"{FCDATA[fccode]['FCName']} has no current market data.")
         return
 
     com_data = stn_data['commodities']
     loc_data = stn_data['name']
     if com_data == []:
-        await ctx.send(f"{fcname} has no current market data.")
+        await ctx.send(f"{FCDATA[fccode]['FCName']} has no current market data.")
         return
 
     table = Texttable()
@@ -443,7 +444,7 @@ async def stock(ctx, fcname, source='auto'):
     msg = "```%s```\n" % ( table.draw() )
     #print('Creating embed...')
     embed = discord.Embed()
-    embed.add_field(name = f"{fcname} ({stn_data['sName']}) stock", value = msg, inline = False)
+    embed.add_field(name = f"{FCDATA[fccode]['FCName']} ({stn_data['sName']}) stock", value = msg, inline = False)
     embed.add_field(name = 'FC Location', value = loc_data, inline = False)
     embed.set_footer(text = f"Data last updated: {stn_data['market_updated']}\n"
                             f"Data Source: {source}\n"
