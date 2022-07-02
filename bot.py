@@ -31,6 +31,7 @@ TOKEN = os.getenv('DISCORD_TOKEN')
 GUILD = os.getenv('DISCORD_GUILD')
 CARRIERS = os.getenv('FLEET_CARRIERS')
 WMMCHANNEL = os.getenv('WMM_CHANNEL', '📦wmm-stock')
+CCOWMMCHANNEL = os.getenv('CCO_WMM_CHANNEL', 'cco-wmm-supplies')
 ENV = os.getenv('ENV', 'prod')
 API_HOST = os.getenv('API_HOST')
 API_TOKEN = os.getenv('API_TOKEN')
@@ -63,8 +64,8 @@ async def on_ready():
 
 
 @tasks.loop(seconds=30)
-async def wmm_stock(message, channel):
-    print(f"wmm_stock function start")
+async def wmm_stock(message, channel, ccochannel):
+    #print(f"wmm_stock function start")
     global wmm_trigger
     wmm_commodities = ['indite', 'bertrandite', 'gold', 'silver']
     wmm_carriers = []
@@ -85,7 +86,10 @@ async def wmm_stock(message, channel):
         return
 
     content = {}
+    ccocontent = {}
     wmm_stock = {}
+    wmm_station_stock = {}
+
     for fcid in wmm_carriers:
         carrier_has_stock = False
         if 'cAPI' in FCDATA[fcid]:
@@ -154,10 +158,15 @@ async def wmm_stock(message, channel):
         for com in com_data:
             if FCDATA[fcid]['wmm'] not in wmm_stock:
                 wmm_stock[FCDATA[fcid]['wmm']] = []
+            if stn_data['currentStarSystem'] not in wmm_station_stock:
+                wmm_station_stock[stn_data['currentStarSystem']] = {}
+            if FCDATA[fcid]['wmm'] not in wmm_station_stock[stn_data['currentStarSystem']]:
+                wmm_station_stock[stn_data['currentStarSystem']][FCDATA[fcid]['wmm']] = {}
             if com['name'].lower() not in wmm_commodities:
                 continue
             if com['stock'] != 0:
                 carrier_has_stock = True
+                wmm_station_stock[stn_data['currentStarSystem']][FCDATA[fcid]['wmm']][com['name'].lower()] = int(com['stock'])
                 if int(com['stock']) < 1000:
                     #wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s - **%s** - Price: %s - LOW STOCK %s (As of %s)" % (
                     #    com['name'], com['stock'], FCDATA[fcid]['wmm'], stn_data['full_name'][:-10], com['buyPrice'], FCDATA[fcid]['owner'], market_updated )
@@ -227,6 +236,33 @@ async def wmm_stock(message, channel):
     footer.append("Carriers with no timestamp are fetched from cAPI and are accurate to within an hour.")
     footer.append("Carriers with (As of ...) are fetched from Inara. Ensure EDMC is running to update stock levels!")
     await channel.send('\n'.join(footer))
+
+    for system in wmm_station_stock:
+        ccocontent[system] = []
+        #content[system].append('-')
+        # stock_sum_msg[system] = {}
+        for station in wmm_station_stock[system]:
+            ccocontent[system].append('-')
+            for commodity in wmm_commodities:
+                if commodity not in wmm_station_stock[system][station]:
+                    ccocontent[system].append(f"{commodity.title()} x NO STOCK !! - {system} ({station})")
+                else:
+                    ccocontent[system].append(f"{commodity.title()} x {format(wmm_station_stock[system][station][commodity], ',')} - {system} ({station})")
+            #stock_sum_msg.append("-")
+
+    # for each station, use a new message.
+    # and split messages over 10 lines.
+    # each line is roughly 50 chars
+    # using max: 2000 / 50 = 40
+    await clear_history(ccochannel)
+    for (system, stncontent) in ccocontent.items():
+        if len(stncontent) == 1:
+            # this station has no carriers, dont bother printing it.
+            continue
+        pages = [page for page in chunk(stncontent, 40)]
+        for page in pages:
+            page.insert(0, ':')
+            await ccochannel.send('\n'.join(page))
 
     # the following code allows us to change sleep time dynamically
     # waiting at least 10 seconds before checking wmm_interval again
@@ -398,12 +434,13 @@ async def APITest(ctx, mark):
                                 'Source: Optional argument, one of "inara" or "capi". Defaults to capi -> inara fallback.')
 async def stock(ctx, fcname, source='auto'):
     source = source.lower()
-    fccode = get_fccode(fcname)
+    # check if fcname is an fccode, otherwise look it up using get_fccode()
+    fccode = fcname.upper() if fcname.upper() in FCDATA.keys() else get_fccode(fcname)
     if fccode not in FCDATA:
         await ctx.send('The requested carrier is not in the list! Add carriers using the add_FC command!')
         return
 
-    await ctx.send(f'Fetching stock levels for **{fcname} ({fccode})**')
+    await ctx.send(f"Fetching stock levels for **{FCDATA[fccode]['FCName']} ({fccode})**")
 
     if source == 'auto':
         if 'cAPI' in FCDATA[fccode]:
@@ -419,13 +456,13 @@ async def stock(ctx, fcname, source='auto'):
         stn_data = get_fc_stock(fccode, source)
 
     if stn_data is False:
-        await ctx.send(f"{fcname} has no current market data.")
+        await ctx.send(f"{FCDATA[fccode]['FCName']} has no current market data.")
         return
 
     com_data = stn_data['commodities']
     loc_data = stn_data['name']
     if com_data == []:
-        await ctx.send(f"{fcname} has no current market data.")
+        await ctx.send(f"{FCDATA[fccode]['FCName']} has no current market data.")
         return
 
     table = Texttable()
@@ -443,7 +480,7 @@ async def stock(ctx, fcname, source='auto'):
     msg = "```%s```\n" % ( table.draw() )
     #print('Creating embed...')
     embed = discord.Embed()
-    embed.add_field(name = f"{fcname} ({stn_data['sName']}) stock", value = msg, inline = False)
+    embed.add_field(name = f"{FCDATA[fccode]['FCName']} ({stn_data['sName']}) stock", value = msg, inline = False)
     embed.add_field(name = 'FC Location', value = loc_data, inline = False)
     embed.set_footer(text = f"Data last updated: {stn_data['market_updated']}\n"
                             f"Data Source: {source}\n"
@@ -746,13 +783,25 @@ async def on_error(event, *args, **kwargs):
 
 @bot.event
 async def on_command_error(ctx, error):
+    command = ctx.invoked_with
     if ENV == 'dev':
         from pprint import pprint
         print('== Start Command Error ==')
+        pprint(command)
         pprint(error)
         print('== End Command Error ==')
     if isinstance(error, commands.errors.CheckFailure):
-        await ctx.send('You do not have the correct role for this command.')
+        message = "You do not have the correct role for this command."
+    elif isinstance(error, commands.MissingPermissions):
+        message = "You are missing the required permissions to run this command!"
+    elif isinstance(error, commands.MissingRequiredArgument):
+        message = f"Missing a required argument: '{error.param}'. See `;help {command}` for more info."
+    elif isinstance(error, commands.ConversionError):
+        message = str(error)
+    else:
+        message = "Oh no! Something went wrong while running the command!"
+    await ctx.send(message)
+
 
 def convert_carrier_data():
     print(f'Attempting to convert old style carrier list, searching for data:')
@@ -967,11 +1016,12 @@ async def start_wmm_task():
         print("def start_wmm_task: task is_running(), cannot start.")
         return False
     channel = discord.utils.get(bot.get_all_channels(), guild__name=GUILD, name=WMMCHANNEL)
+    ccochannel = discord.utils.get(bot.get_all_channels(), guild__name=GUILD, name=CCOWMMCHANNEL)
     print("Clearing last stock update message in #%s" % channel)
     await clear_history(channel)
     print("Starting WMM stock background task")
     message = await channel.send('Stock Bot initialized, preparing for WMM stock update.')
-    wmm_stock.start(message, channel)
+    wmm_stock.start(message, channel, ccochannel)
 
 
 def chunk(chunk_list, max_size=10):
