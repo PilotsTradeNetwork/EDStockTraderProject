@@ -166,7 +166,10 @@ async def wmm_stock(message, channel, ccochannel):
                 continue
             if com['stock'] != 0:
                 carrier_has_stock = True
-                wmm_station_stock[stn_data['currentStarSystem']][FCDATA[fcid]['wmm']][com['name'].lower()] = int(com['stock'])
+                if com['name'].lower() not in wmm_station_stock[stn_data['currentStarSystem']][FCDATA[fcid]['wmm']]:
+                    wmm_station_stock[stn_data['currentStarSystem']][FCDATA[fcid]['wmm']][com['name'].lower()] = int(com['stock'])
+                else:
+                    wmm_station_stock[stn_data['currentStarSystem']][FCDATA[fcid]['wmm']][com['name'].lower()] += int(com['stock'])
                 if int(com['stock']) < 1000:
                     #wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s - **%s** - Price: %s - LOW STOCK %s (As of %s)" % (
                     #    com['name'], com['stock'], FCDATA[fcid]['wmm'], stn_data['full_name'][:-10], com['buyPrice'], FCDATA[fcid]['owner'], market_updated )
