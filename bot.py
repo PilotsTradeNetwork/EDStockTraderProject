@@ -9,20 +9,19 @@
 # Dev portal: https://discord.com/developers/applications/803357001765617705/bot
 # EDSM stations API: https://www.edsm.net/en/api-system-v1
 
-import os
-import sys
-import discord
-import re
-import requests
-import json
 import asyncio
-from texttable import Texttable
-import requests
-from bs4 import BeautifulSoup
-from dotenv import find_dotenv, load_dotenv, set_key
-from discord.ext import commands, tasks
-from datetime import datetime
+import json
+import os
+import re
 import traceback
+from datetime import datetime
+
+import discord
+from discord.ext import commands, tasks
+from dotenv import find_dotenv, load_dotenv, set_key
+from texttable import Texttable
+
+from inara_requests import *
 
 carrierdb = '.carriers'
 load_dotenv()
@@ -867,27 +866,6 @@ def save_wmm_interval(wmm_interval):
     set_key(find_dotenv(), "WMM_INTERVAL", str(wmm_interval), "auto")
     print("Done.")
 
-
-def inara_find_fc_system(fcid):
-    #print("Searching inara for carrier %s" % ( fcid ))
-    URL = "https://inara.cz/station/?search=%s" % ( fcid )
-    #URL = "https://inara.cz/search/?search=%s" % ( fcid )
-    try:
-        page = requests.get(URL, headers={'User-Agent': 'PTNStockBot'})
-        soup = BeautifulSoup(page.content, "html.parser")
-        results = soup.find_all("div", class_="maincontent1")
-        carrier = results[0].find("h3", class_="standardcase").find("a", href=True)
-        system = results[0].find("span", class_="uppercase").find("a", href=True).text
-        if fcid == carrier.text[-8:-1]:
-            #print("Carrier: %s (stationid %s) is at system: %s" % (carrier.text, stationid['href'][9:-1], system))
-            return {'system': system, 'stationid': carrier['href'][9:-1], 'full_name': carrier.text }
-        else:
-            print("Could not find exact match, aborting inara search")
-            return False
-    except Exception as e:
-        print("No results from inara for %s, aborting search. Error: %s" % ( fcid, e ))
-        return False
-
 '''
 # Disable EDSM as a stock source.
 # Code to be removed at a later stage.
@@ -911,47 +889,6 @@ def edsm_find_fc_system(fcid):
         print("No results from edsm for %s, aborting search." % fcid)
         return False
 '''
-
-def inara_fc_market_data(fcid):
-    #print("Searching inara market data for station: %s (%s)" % ( stationid, fcid ))
-    try:
-        URL = "https://inara.cz/station/?search=%s" % ( fcid )
-        page = requests.get(URL, headers={'User-Agent': 'PTNStockBot'})
-        soup = BeautifulSoup(page.content, "html.parser")
-        results = soup.find_all("div", class_="maincontent1")
-        carrier = results[0].find("h3", class_="standardcase").find("a", href=True).text
-        system = results[0].find("span", class_="uppercase").find("a", href=True).text
-        updated = soup.find("div", text="Market update").next_sibling.get_text()
-        results = soup.find("div", class_="mainblock maintable")
-        rows = results.find("table", class_="tablesorterintab").find("tbody").find_all("tr")
-        marketdata = []
-        for row in rows:
-            rowclass = row.attrs.get("class") or []
-            if "subheader" in rowclass:
-                continue
-            cells = row.find_all("td")
-            rn = cells[0].get_text()
-            commodity = {
-                            'id': rn,
-                            'name': rn,
-                            'sellPrice': int(cells[1].get_text().replace('-', '0').replace(',','').replace(' Cr','')),
-                            'buyPrice': int(cells[2].get_text().replace('-', '0').replace(',','').replace(' Cr','')),
-                            'demand': int(cells[3].get_text().replace('-', '0').replace(',','')),
-                            'stock': int(cells[4].get_text().replace('-', '0').replace(',',''))
-                        }
-            marketdata.append(commodity)
-        data = {}
-        data['name'] = system
-        data['currentStarSystem'] = system
-        data['full_name'] = carrier
-        data['sName'] = fcid
-        data['market_updated'] = updated
-        data['commodities'] = marketdata
-        return data
-    except Exception as e:
-        print("Exception getting inara data for carrier: %s" % fcid)
-        return False
-
 
 def capi_fc_market_data(fcid):
     # get stocks from capi and format as inara data.
