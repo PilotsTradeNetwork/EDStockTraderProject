@@ -137,7 +137,7 @@ async def wmm_stock(message, channel, ccochannel):
             stn_data['currentStarSystem'] = stn_data['name']
             stn_data['market'] = {'commodities': stn_data['commodities']}
             try:
-                utc_time = datetime.strptime(stn_data['market_updated'], "%d %b %Y, %I:%M%p")
+                utc_time = datetime.strptime(stn_data['market_updated'].split('(')[1][0:-1], "%d %b %Y, %I:%M%p")
                 market_updated = "(As of <t:%d:R>)" % utc_time.timestamp()
             except:
                 market_updated = "(As of %s)" % stn_data['market_updated']
