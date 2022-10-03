@@ -336,7 +336,7 @@ async def addFC(ctx, FCCode, FCName, owner):
         return
     # iterate through our known carriers and check if the alias is already assigned.
     for fc_code, fc_data in FCDATA.items():
-        if FCName.lower() in fc_data['FCName']:
+        if FCName.lower() == fc_data['FCName']:
             await ctx.send(f'{FCName} is an alias that is already in the alias list belonging to carrier {fc_code}!')
             return
 
