@@ -947,8 +947,8 @@ def inara_fc_market_data(fcid):
                 'id': rn,
                 'name': rn,
                 'sellPrice': int(cells[1].get_text().replace('-', '0').replace(',', '').replace(' Cr', '')),
-                'buyPrice': int(cells[2].get_text().replace('-', '0').replace(',', '').replace(' Cr', '')),
-                'demand': int(cells[3].get_text().replace('-', '0').replace(',', '')),
+                'buyPrice': int(cells[3].get_text().replace('-', '0').replace(',', '').replace(' Cr', '')),
+                'demand': int(cells[2].get_text().replace('-', '0').replace(',', '')),
                 'stock': int(cells[4].get_text().replace('-', '0').replace(',', ''))
             }
             marketdata.append(commodity)
