@@ -4,7 +4,7 @@
 ![image](https://user-images.githubusercontent.com/6062471/122630789-6d27e380-d094-11eb-9554-d185af5b69d2.png)
 
 
-## Current Release Version: 2.0
+## Current Release Version: 2.1
 
 This release brings Frontier cAPI support. Please note that due to a current bug with Epic Games authentication, we should continue to use Inara for EGS based carriers.
 
@@ -13,6 +13,10 @@ This release brings Frontier cAPI support. Please note that due to a current bug
 The EDStockTracker is a bot which allows fleet carrier owners to track the commodities present in their fleet carrier's markets via Discord. This can be done in a public discord server, or by PMing the bot on Discord. Upon command, the bot will post information about the fleet carrier's commodity market, such as what is being bought or sold, as well as their stock (for sell orders), and demand (for buy orders).
 
 Currently, the bot accomplishes this by utilising EDSM, Inara, or cAPI to determine what is in the FLeet Carrier's market, though this information can often become out of date fast if it has been a while since a CMDR has docked with an EDDN uploader.
+
+## 2.1 Discord.py v2
+
+Uses version 2 of the discord.py library (minimum v2.1.0)
 
 ## 2.0 Rework / cAPI integration
 
@@ -33,6 +37,7 @@ Create a `.env` file with the following values:
 ```
 DISCORD_TOKEN=YOUR_TOKEN_HERE
 DISCORD_GUILD=SERVER_NAME_HERE
+DISCORD_GUILD_ID=GUILD_ID_HERE
 WMM_CHANNEL='CHANNEL HERE'
 WMM_INTERVAL=3600
 API_HOST=PTN2FDevAPI_HERE

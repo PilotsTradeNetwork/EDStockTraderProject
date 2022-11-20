@@ -1,13 +1,10 @@
-# bot.py
+# Stockbot
 # Written by Matthew Circelli
-# Ver: 1.4 - Cleaner embeds!
-# Date: 2/7/2021
-# Desc: Bot that will hopefully track FC stock levels on pings
-# TODO: Show only demand when on a loading mission, vice-versa
-# TODO: deleteFC command or edit FC command
+# Ver: 2.1 - Discord.py v2
+# Date: 2022-11-20
+# Desc: Bot that tracks Carrier Stock and WMM data for the Pilots Trade Network discord.
 # Refs: Discord.py API: https://discordpy.readthedocs.io/en/latest/api.html#
 # Dev portal: https://discord.com/developers/applications/803357001765617705/bot
-# EDSM stations API: https://www.edsm.net/en/api-system-v1
 
 import os
 import sys
@@ -21,6 +18,7 @@ import requests
 from bs4 import BeautifulSoup
 from dotenv import find_dotenv, load_dotenv, set_key
 from discord.ext import commands, tasks
+from discord import app_commands
 from datetime import datetime
 import traceback
 
@@ -29,6 +27,7 @@ load_dotenv()
 load_dotenv(carrierdb)
 TOKEN = os.getenv('DISCORD_TOKEN')
 GUILD = os.getenv('DISCORD_GUILD')
+GUILD_ID = int(os.getenv('DISCORD_GUILD_ID'))
 CARRIERS = os.getenv('FLEET_CARRIERS')
 WMMCHANNEL = os.getenv('WMM_CHANNEL', '📦wmm-stock')
 CCOWMMCHANNEL = os.getenv('CCO_WMM_CHANNEL', 'cco-wmm-supplies')
@@ -39,8 +38,10 @@ wmm_interval = int(os.getenv('WMM_INTERVAL', 3600))
 wmm_trigger = False
 intents = discord.Intents.default()
 intents.members = True
+intents.message_content = True
 
 bot = commands.Bot(command_prefix=';', intents=intents)
+guild_obj = discord.Object(id=GUILD_ID)
 
 if ENV != 'prod':
     # Debugging, used only in dev.
@@ -53,7 +54,7 @@ if ENV != 'prod':
 
 @bot.event
 async def on_ready():
-    guild = discord.utils.get(bot.guilds, name = GUILD) #bot.guilds is a list of all connected servers
+    guild = bot.get_guild(GUILD_ID)
 
     print(
         f'{bot.user.name} is connected to {guild.name} (id: {guild.id})\n'
@@ -61,6 +62,8 @@ async def on_ready():
     )
 
     await start_wmm_task()
+    bot.tree.copy_global_to(guild=guild)
+    await bot.tree.sync(guild=guild)
 
 
 @tasks.loop(seconds=30)
@@ -146,10 +149,7 @@ async def wmm_stock(message, channel, ccochannel):
             print(f"No market data for {fcid}")
             continue
 
-        #market_updated = "<t:%d:R>" % datetime.now().timestamp()
-
         com_data = stn_data['market']['commodities']
-        # Indite x 11.8k - Wally (Malerba) - P.T.N. Candy Van - Price: 34,789cr - @CMDR Sofiya Khlynina
         if com_data == []:
             content[FCDATA[fcid]['wmm']].append("**%s** - %s (%s) has no current market data. please visit the carrier with EDMC running" % (
                 carrier_name, stn_data['currentStarSystem'], FCDATA[fcid]['wmm'] )
@@ -171,9 +171,6 @@ async def wmm_stock(message, channel, ccochannel):
                 else:
                     wmm_station_stock[stn_data['currentStarSystem']][FCDATA[fcid]['wmm']][com['name'].lower()] += int(com['stock'])
                 if int(com['stock']) < 1000:
-                    #wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s - **%s** - Price: %s - LOW STOCK %s (As of %s)" % (
-                    #    com['name'], com['stock'], FCDATA[fcid]['wmm'], stn_data['full_name'][:-10], com['buyPrice'], FCDATA[fcid]['owner'], market_updated )
-                    #)
                     wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s (%s) - **%s** - Price: %s - LOW STOCK %s" % (
                         com['name'], format(com['stock'], ','), stn_data['currentStarSystem'], FCDATA[fcid]['wmm'], carrier_name, format(com['buyPrice'], ','), market_updated )
                     )
@@ -188,16 +185,10 @@ async def wmm_stock(message, channel, ccochannel):
                             FCDATA[fcid]['notified'][com['name']] = True
                             save_carrier_data(FCDATA)
                 else:
-                    #wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s - **%s** - Price: %s (As of %s)" % (
-                    #    com['name'], com['stock'], FCDATA[fcid]['wmm'], stn_data['full_name'][:-10], com['buyPrice'], market_updated )
-                    #)
                     wmm_stock[FCDATA[fcid]['wmm']].append("%s x %s - %s (%s) - **%s** - Price: %s %s" % (
                         com['name'], format(com['stock'], ','), stn_data['currentStarSystem'], FCDATA[fcid]['wmm'], carrier_name, format(com['buyPrice'], ','), market_updated )
                     )
         if not carrier_has_stock:
-            #wmm_stock[FCDATA[fcid]['wmm']].append("**%s** - %s has no stock of any commodity! %s (As of %s)" % (
-            #    stn_data['full_name'][:-10], FCDATA[fcid]['wmm'], FCDATA[fcid]['owner'], market_updated )
-            #)
             wmm_stock[FCDATA[fcid]['wmm']].append("**%s** - %s (%s) has no stock of any WMM commodity! %s" % (
                 carrier_name, stn_data['currentStarSystem'], FCDATA[fcid]['wmm'], market_updated )
             )
@@ -242,8 +233,6 @@ async def wmm_stock(message, channel, ccochannel):
 
     for system in wmm_station_stock:
         ccocontent[system] = []
-        #content[system].append('-')
-        # stock_sum_msg[system] = {}
         for station in wmm_station_stock[system]:
             ccocontent[system].append('-')
             for commodity in wmm_commodities:
@@ -251,7 +240,6 @@ async def wmm_stock(message, channel, ccochannel):
                     ccocontent[system].append(f"{commodity.title()} x NO STOCK !! - {system} ({station})")
                 else:
                     ccocontent[system].append(f"{commodity.title()} x {format(wmm_station_stock[system][station][commodity], ',')} - {system} ({station})")
-            #stock_sum_msg.append("-")
 
     # for each station, use a new message.
     # and split messages over 10 lines.
@@ -292,28 +280,9 @@ async def wmm_stock_error(error):
     traceback.print_exc()
 
 
-#@bot.event
-# on_member_join triggers when a new user joins the server
-#async def on_member_join(member):
-#    print(f'{member.name} joined!')
-#    await member.send(
-#        f'Hi {member.name}, welcome to P.T.N!\n\n'
-#    )
-#    print(f'Welcome Message Sent!')
-
-
-@bot.command(name='ping', help='If the bot hasnt crashed, it will respond >pong<')
-async def dingle(ctx):
+@bot.hybrid_command(name='stockbot_ping', help='If the bot hasnt crashed, it will respond >pong<')
+async def ping(ctx):
     await ctx.send('pong!')
-    '''
-    # Disable EDSM as a stock source.
-    # Code to be removed at a later stage.
-    r = requests.get('https://www.edsm.net/api-system-v1/stations/market')
-    if r:
-        await ctx.send('EDSM pongs as well! Everything should work great :)')
-    else:
-        await ctx.send('EDSM does not pong! Stock tracking will not function :(')
-    '''
 
 
 @bot.command(name='add_FC', help='Add a fleet carrier for stock tracking.\n'
@@ -353,38 +322,6 @@ async def addFC(ctx, FCCode, FCName, owner):
 
     print(f'Format is good... Checking database...')
 
-    '''
-    # Disable EDSM as a stock source.
-    # Code to be removed at a later stage.
-    search_data = None
-    if FCSys == 'auto-inara':
-        search_data = inara_find_fc_system(FCCode)
-    elif FCSys == 'auto-edsm' or FCSys == 'auto':
-        search_data = edsm_find_fc_system(FCCode)
-    if search_data is False:
-        await ctx.send(f'Could not find the FC system. please manually supply system name')
-        return
-    elif search_data is not None:
-        FCSys = search_data['system']
-    try:
-        pmeters = {'systemName': FCSys, 'stationName': FCCode}
-        r = requests.get('https://www.edsm.net/api-system-v1/stations/market', params=pmeters)
-        mid = r.json()
-
-        if r.text=='{}':
-            await ctx.send(f'FC does not exist in the EDSM database, check to make sure the inputs are correct!')
-            return
-        else:
-            await ctx.send(f'This FC is NOT a lie!')
-    except:
-        print("Failure getting edsm data")
-        await ctx.send(f'Failed getting EDSM data, please try again.')
-        return
-
-    print(mid['marketId'])
-    midstr = str(mid['marketId'])
-    '''
-
     FCDATA[FCCode.upper()] = {
         'FCName': FCName.lower(),
         #'FCMid': midstr, # EDSM Data, removed.
@@ -395,55 +332,12 @@ async def addFC(ctx, FCCode, FCName, owner):
 
     await ctx.send(f'Added {FCCode} to the FC list, under reference name {FCName}')
 
-'''
-# Disable EDSM as a stock source.
-# Code to be removed at a later stage.
-@bot.command(name='APItest', help='Test EDSM API')
-@commands.has_role('Bot Handler')
-async def APITest(ctx, mark):
-    await ctx.send('Testing API with given marketId')
-    pmeters = {'marketId': mark}
-    r = requests.get('https://www.edsm.net/api-system-v1/stations/market',params=pmeters)
-    stn_data = r.json()
 
-    com_data = stn_data['commodities']
-    loc_data = stn_data['name']
-    if com_data == []:
-        await ctx.send(f"{stn_data['sName']} is empty!")
-        return
-
-    name_data = ["" for x in range(len(com_data))]
-    stock_data = ["" for x in range(len(com_data))]
-    dem_data = ["" for x in range(len(com_data))]
-
-    for i in range(len(com_data)):
-        name_data[i] = com_data[i]['name']
-        stock_data[i] = com_data[i]['stock']
-        dem_data[i] = com_data[i]['demand']
-
-    print('Creating embed...')
-    embed = discord.Embed(title=f"{stn_data['sName']} stock")
-    embed.add_field(name = 'Commodity', value = name_data, inline = True)
-    embed.add_field(name = 'Amount', value = stock_data, inline = True)
-    embed.add_field(name = 'FC Location', value = loc_data, inline= True)
-    print('Embed created!')
-    print(name_data)
-
-    await ctx.send(embed=embed)
-    print('Embed sent!')
-'''
-
-@bot.command(name='stock', help='Returns stock of a PTN carrier (carrier needs to be added first)\n'
-                                'Source: Optional argument, one of "inara" or "capi". Defaults to capi -> inara fallback.')
-async def stock(ctx, fcname, source='auto'):
+def stock_command(fcname, source):
     source = source.lower()
-    # check if fcname is an fccode, otherwise look it up using get_fccode()
     fccode = fcname.upper() if fcname.upper() in FCDATA.keys() else get_fccode(fcname)
     if fccode not in FCDATA:
-        await ctx.send('The requested carrier is not in the list! Add carriers using the add_FC command!')
-        return
-
-    await ctx.send(f"Fetching stock levels for **{FCDATA[fccode]['FCName']} ({fccode})**")
+        return {'msg': 'The requested carrier is not in the list! Add carriers using the add_FC command!'}
 
     if source == 'auto':
         if 'cAPI' in FCDATA[fccode]:
@@ -454,25 +348,21 @@ async def stock(ctx, fcname, source='auto'):
             source = 'inara'
     else:
         if source not in ['capi', 'inara']:
-            await ctx.send('Invalid source! Please use "capi" or "inara"')
-            return
+             return {'msg': 'Invalid source! Please use "capi" or "inara"'}
         stn_data = get_fc_stock(fccode, source)
 
     if stn_data is False:
-        await ctx.send(f"{FCDATA[fccode]['FCName']} has no current market data.")
-        return
+        return {'msg': f"{FCDATA[fccode]['FCName']} has no current market data."}
 
     com_data = stn_data['commodities']
     loc_data = stn_data['name']
     if com_data == []:
-        await ctx.send(f"{FCDATA[fccode]['FCName']} has no current market data.")
-        return
+        return {'msg': f"{FCDATA[fccode]['FCName']} has no current market data."}
 
     table = Texttable()
     table.set_cols_align(["l", "r", "r"])
     table.set_cols_valign(["m", "m", "m"])
     table.set_cols_dtype(['t', 'i', 'i'])
-    #table.set_deco(Texttable.HEADER | Texttable.HLINES)
     table.set_deco(Texttable.HEADER)
     table.header(["Commodity", "Amount", "Demand"])
 
@@ -481,16 +371,38 @@ async def stock(ctx, fcname, source='auto'):
             table.add_row([com['name'], com['stock'], com['demand']])
 
     msg = "```%s```\n" % ( table.draw() )
-    #print('Creating embed...')
     embed = discord.Embed()
     embed.add_field(name = f"{FCDATA[fccode]['FCName']} ({stn_data['sName']}) stock", value = msg, inline = False)
     embed.add_field(name = 'FC Location', value = loc_data, inline = False)
     embed.set_footer(text = f"Data last updated: {stn_data['market_updated']}\n"
                             f"Data Source: {source}\n"
                             f"Numbers out of wack? Ensure EDMC is running!")
-    #print('Embed created!')
-    await ctx.send(embed=embed)
-    #print('Embed sent!')
+    return {'embed': embed}
+
+
+@bot.tree.command(guild=guild_obj, name="stock", description="Get the current stock of a fleet carrier")
+@app_commands.describe(name='Name of the PTN carrier')
+@app_commands.describe(source='Optional argument, one of "inara" or "capi". Defaults to capi -> inara fallback.')
+async def slash_stock(interaction: discord.Interaction, name: str, source: str = 'auto'):
+    response = stock_command(name, source)
+    if 'msg' in response:
+        await interaction.response.send_message(response['msg'])
+    elif 'embed' in response:
+        await interaction.response.send_message(embed=response['embed'])
+    else:
+        await interaction.response.send_message('Something went wrong!')
+
+
+@bot.command(name='stock', help='Returns stock of a PTN carrier (carrier needs to be added first)\n'
+                                'Source: Optional argument, one of "inara" or "capi". Defaults to capi -> inara fallback.')
+async def stock(ctx, fcname, source='auto'):
+    response = stock_command(fcname, source)
+    if 'msg' in response:
+        await ctx.send(response['msg'])
+    elif 'embed' in response:
+        await ctx.send(embed=response['embed'])
+    else:
+        await ctx.send('Something went wrong!')
 
 
 @bot.command(name='del_FC', help='Delete a fleet carrier from the tracking database.\n'
@@ -683,7 +595,7 @@ async def getwmminterval(ctx):
     await ctx.send(f'wmm-stock interval is currently {wmm_interval} seconds')
 
 
-@bot.command(name='wmm_stock', help='Manually trigger the wmm stock update without changing the interval.')
+@bot.hybrid_command(name='wmm_stock', help='Manually trigger the wmm stock update without changing the interval.')
 @commands.has_any_role('Bot Handler', 'Admin', 'Mod', 'Certified Carrier')
 async def wmmstock(ctx):
     global wmm_trigger
@@ -695,7 +607,7 @@ async def wmmstock(ctx):
         await start_wmm_task()
 
 
-@bot.command(name='wmm_status', help='Check the wmm background task status')
+@bot.hybrid_command(name='wmm_status', help='Check the wmm background task status')
 @commands.has_any_role('Bot Handler', 'Admin', 'Mod')
 async def wmmstatus(ctx):
     if not wmm_stock.is_running() or wmm_stock.failed():
@@ -871,7 +783,6 @@ def save_wmm_interval(wmm_interval):
 def inara_find_fc_system(fcid):
     #print("Searching inara for carrier %s" % ( fcid ))
     URL = "https://inara.cz/elite/station-market/?search=%s" % (fcid)
-    #URL = "https://inara.cz/search/?search=%s" % ( fcid )
     try:
         page = requests.get(URL, headers={'User-Agent': 'PTNStockBot'})
         soup = BeautifulSoup(page.content, "html.parser")
@@ -890,30 +801,6 @@ def inara_find_fc_system(fcid):
     except Exception as e:
         print("No results from inara for %s, aborting search. Error: %s" % (fcid, e))
         return False
-
-'''
-# Disable EDSM as a stock source.
-# Code to be removed at a later stage.
-def edsm_find_fc_system(fcid):
-    #print("Searching edsm for carrier %s" % ( fcid ))
-    URL = "https://www.edsm.net/en/search/stations/index/name/%s/sortBy/distanceSol/type/31" % ( fcid )
-    try:
-        page = requests.get(URL, headers={'User-Agent': 'PTNStockBot'})
-        soup = BeautifulSoup(page.content, "html.parser")
-        results = soup.find("table", class_="table table-hover").find("tbody").find_all("a")
-        carrier = results[0].get_text()
-        system = results[1].get_text()
-        market_updated = results[6].find("i").attrs.get("title")[27:]
-        if fcid == carrier:
-            #print("Carrier: %s is at system: %s" % (carrier, system))
-            return {'system': system, 'market_updated': market_updated}
-        else:
-            #print("Could not find exact match, aborting inara search")
-            return False
-    except:
-        print("No results from edsm for %s, aborting search." % fcid)
-        return False
-'''
 
 def inara_fc_market_data(fcid):
     # print("Searching inara market data for station: %s (%s)" % ( stationid, fcid ))
@@ -1008,21 +895,6 @@ def get_fc_stock(fccode, source='inara'):
         stn_data = capi_fc_market_data(fccode)
         if not stn_data:
             return False
-    '''
-    # Disable EDSM as a stock source.
-    # Code to be removed at a later stage.
-    else:
-        pmeters = {'marketId': FCDATA[fccode]['FCMid']}
-        r = requests.get('https://www.edsm.net/api-system-v1/stations/market',params=pmeters)
-        stn_data = r.json()
-
-        edsm_search = edsm_find_fc_system(fccode)
-        if edsm_search:
-            stn_data['market_updated'] = edsm_search['market_updated']
-        else:
-            stn_data['market_updated'] = "Unknown"
-        stn_data['full_name'] = False
-    '''
     return stn_data
 
 
@@ -1080,7 +952,6 @@ def oauth_new(carrierid, force=False):
     pmeters = {'token': API_TOKEN}
     if force:
         pmeters['force'] = "true"
-    #N4M-04Z
     r = requests.get(f"{API_HOST}/generate/{carrierid}",params=pmeters)
     return r
 
