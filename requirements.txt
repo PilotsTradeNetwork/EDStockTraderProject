@@ -1,0 +1,6 @@
+discord.py
+requests
+texttable
+requests
+beautifulsoup4
+python-dotenv

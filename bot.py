@@ -22,8 +22,9 @@ from discord import app_commands
 from datetime import datetime
 import traceback
 
-carrierdb = '.carriers'
-load_dotenv()
+ENV_DIR = os.getenv('ENV_DIR', '')
+carrierdb = os.path.join(ENV_DIR, '.carriers')
+load_dotenv(os.path.join(ENV_DIR, '.env'))
 load_dotenv(carrierdb)
 TOKEN = os.getenv('DISCORD_TOKEN')
 GUILD = os.getenv('DISCORD_GUILD')
@@ -720,7 +721,7 @@ async def on_command_error(ctx, error):
 
 def convert_carrier_data():
     print(f'Attempting to convert old style carrier list, searching for data:')
-    dotenv_file = find_dotenv()
+    dotenv_file = find_dotenv(os.path.join(ENV_DIR, '.env'))
     fcfile = open(dotenv_file)
     envlist = fcfile.readlines()
     fcfile.close()
@@ -776,7 +777,7 @@ def save_carrier_data(FCDATA):
 
 def save_wmm_interval(wmm_interval):
     print("Saving WMM Update Interval: %d ..." % wmm_interval, end='')
-    set_key(find_dotenv(), "WMM_INTERVAL", str(wmm_interval), "auto")
+    set_key(find_dotenv(os.path.join(ENV_DIR, '.env')), "WMM_INTERVAL", str(wmm_interval), "auto")
     print("Done.")
 
 
